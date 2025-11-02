@@ -18,6 +18,18 @@ class ForecastEngine {
             this.relevancyAnalyzer = null;
         }
         
+        // Initialize ML Forecast Engine if available
+        if (typeof MLForecastEngine !== 'undefined') {
+            this.mlEngine = new MLForecastEngine();
+            // Train model on initialization (async, non-blocking)
+            this.mlEngine.trainModelWithSampleData().catch(err => {
+                console.warn('ML model training failed:', err);
+            });
+        } else {
+            console.warn('MLForecastEngine not loaded - using rule-based predictions');
+            this.mlEngine = null;
+        }
+        
         if (!this.forecastResults || !this.generateBtn) {
             console.error('ForecastEngine: Required DOM elements not found', {
                 forecastResults: !!this.forecastResults,
@@ -117,13 +129,15 @@ class ForecastEngine {
             // Analyze sentiment from news
             const sentiment = this.analyzeSentiment(symbol, newsData || []);
             
-            // Generate all forecast types
+            // Generate all forecast types (await ML-enhanced trend forecast)
+            const trendForecast = await this.generateTrendForecast(symbol, sentiment, newsData || []);
+            
             return {
                 symbol: symbol.toUpperCase(),
                 sentiment,
                 forecasts: [
                     this.generateSentimentForecast(symbol, sentiment),
-                    this.generateTrendForecast(symbol, sentiment),
+                    trendForecast,
                     this.generateVolatilityForecast(symbol, sentiment),
                     this.generatePriceForecast(symbol, sentiment)
                 ]
@@ -563,13 +577,38 @@ class ForecastEngine {
     }
 
     /**
-     * Generate trend forecast
+     * Generate trend forecast (with ML enhancement if available)
      */
-    generateTrendForecast(symbol, sentiment) {
-        const trend = sentiment.score > 10 ? 'Upward' : sentiment.score < -10 ? 'Downward' : 'Sideways';
-        const trendColor = sentiment.score > 10 ? 'positive' : sentiment.score < -10 ? 'negative' : '';
+    async generateTrendForecast(symbol, sentiment, newsData) {
+        let trendScore = sentiment.score / 100; // Normalize to -1 to 1
+        let trendConfidence = sentiment.confidence;
+        let method = 'Rule-Based';
+        
+        // Try ML prediction if available
+        if (this.mlEngine && this.mlEngine.isModelLoaded) {
+            try {
+                // Get categorized articles for better ML features
+                const categorizedArticles = this.categorizeArticles(symbol, newsData);
+                const allArticles = [
+                    ...categorizedArticles.positive,
+                    ...categorizedArticles.negative,
+                    ...categorizedArticles.neutral
+                ];
+                
+                const mlResult = await this.mlEngine.predictTrend(sentiment, allArticles, this.relevancyAnalyzer);
+                trendScore = mlResult.score;
+                trendConfidence = mlResult.confidence;
+                method = mlResult.method;
+            } catch (error) {
+                console.warn('ML prediction failed, using rule-based:', error);
+            }
+        }
+        
+        // Convert score to trend direction
+        const trend = trendScore > 0.1 ? 'Upward' : trendScore < -0.1 ? 'Downward' : 'Sideways';
+        const trendColor = trendScore > 0.1 ? 'positive' : trendScore < -0.1 ? 'negative' : '';
         const sentimentColor = sentiment.score > 20 ? 'positive' : sentiment.score < -20 ? 'negative' : '';
-        const strength = Math.abs(sentiment.score) > 50 ? 'Strong' : Math.abs(sentiment.score) > 20 ? 'Moderate' : 'Weak';
+        const strength = Math.abs(trendScore) > 0.5 ? 'Strong' : Math.abs(trendScore) > 0.2 ? 'Moderate' : 'Weak';
         
         return {
             symbol,
@@ -577,10 +616,10 @@ class ForecastEngine {
             metrics: [
                 { label: 'Trend Direction', value: trend, class: trendColor },
                 { label: 'Trend Strength', value: strength },
-                { label: 'Sentiment Score', value: `${sentiment.score}`, class: sentimentColor },
-                { label: 'Reliability', value: `${sentiment.confidence}%` }
+                { label: 'Prediction Method', value: method },
+                { label: 'Confidence', value: `${Math.round(trendConfidence)}%` }
             ],
-            description: `${symbol} shows a ${trend.toLowerCase()} trend with ${strength.toLowerCase()} strength based on current market sentiment.`
+            description: `${symbol} shows a ${trend.toLowerCase()} trend with ${strength.toLowerCase()} strength based on ${method.toLowerCase()} analysis.`
         };
     }
 
