@@ -61,23 +61,6 @@ This is a portfolio project demonstrating:
    npx http-server
    ```
 
-### GitHub Pages Deployment
-
-1. Push your code to GitHub:
-   ```bash
-   git add .
-   git commit -m "Initial commit: Stock Value Forecast"
-   git remote add origin https://github.com/mayad123/stock-value-forecast.git
-   git push -u origin main
-   ```
-
-2. Go to your repository settings on GitHub
-3. Navigate to "Pages" in the left sidebar
-4. Under "Source", select "Deploy from a branch"
-5. Choose the `main` branch and `/ (root)` folder
-6. Click "Save"
-
-
 ## Notes
 
 - The forecast engine uses sentiment analysis based on news articles

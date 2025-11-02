@@ -554,7 +554,13 @@ class ForecastEngine {
 
         // Remove active class from all panels and buttons
         [summaryPanel, articlesPanel, chartPanel].forEach(panel => {
-            if (panel) panel.classList.remove('active');
+            if (panel) {
+                panel.classList.remove('active');
+                // Force hide non-active panels
+                if (!panel.classList.contains('active')) {
+                    panel.style.display = 'none';
+                }
+            }
         });
         [summaryBtn, articlesBtn, chartBtn].forEach(btn => {
             if (btn) btn.classList.remove('active');
@@ -564,6 +570,7 @@ class ForecastEngine {
         if (tabType === 'summary') {
             if (summaryPanel) {
                 summaryPanel.classList.add('active');
+                summaryPanel.style.display = 'block';
             } else {
                 console.error(`Summary panel not found for ${symbol}`);
             }
@@ -575,6 +582,7 @@ class ForecastEngine {
         } else if (tabType === 'articles') {
             if (articlesPanel) {
                 articlesPanel.classList.add('active');
+                articlesPanel.style.display = 'block';
             } else {
                 console.error(`Articles panel not found for ${symbol}`);
             }
@@ -586,6 +594,7 @@ class ForecastEngine {
         } else if (tabType === 'chart') {
             if (chartPanel) {
                 chartPanel.classList.add('active');
+                chartPanel.style.display = 'block';
             } else {
                 console.error(`Chart panel not found for ${symbol}`);
             }
