@@ -8,6 +8,9 @@ let newsFeed;
 let stockManager;
 let forecastEngine;
 
+// Make forecastEngine globally accessible for onclick handlers
+window.forecastEngine = null;
+
 /**
  * Initialize the application when DOM is loaded
  */
@@ -18,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     newsFeed = new NewsFeed();
     stockManager = new StockManager();
     forecastEngine = new ForecastEngine(newsFeed, stockManager);
+    window.forecastEngine = forecastEngine; // Make accessible globally
     
     // Load news feed on startup
     newsFeed.fetchNews();

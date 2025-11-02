@@ -1,6 +1,8 @@
 # 📈 Stock Value Forecast
 
-A GitHub Pages portfolio project showcasing a stock forecasting web application that integrates Yahoo Finance news feed and provides multiple forecast options based on sentiment analysis. This project demonstrates front-end web development skills including HTML5, CSS3, and vanilla JavaScript.
+Live at: `https://mayad123.github.io/stock-value-forecast/`
+
+A GitHub Pages project showcasing a stock forecasting web application that integrates Yahoo Finance news feed and provides multiple forecast options based on sentiment analysis. This project demonstrates front-end web development skills including HTML5, CSS3, and vanilla JavaScript.
 
 ## Features
 
@@ -77,60 +79,6 @@ This is a portfolio project demonstrating:
 5. Choose the `main` branch and `/ (root)` folder
 6. Click "Save"
 
-Your site will be available at: `https://mayad123.github.io/stock-value-forecast/`
-
-## How It Works
-
-1. **News Feed**: The application fetches news from Yahoo Finance RSS feed using a CORS proxy
-2. **Stock Selection**: Users can add multiple stock symbols (e.g., AAPL, MSFT, GOOGL)
-3. **Sentiment Analysis**: The forecast engine analyzes news articles for sentiment indicators
-4. **Forecast Generation**: Based on sentiment scores and selected forecast type, predictions are generated
-
-## Usage
-
-1. The news feed loads automatically when you open the page
-2. Enter a stock symbol in the input field and click "Add Stock"
-3. Select a forecast type from the dropdown
-4. Click "Generate Forecast" to see predictions for all selected stocks
-
-## Technologies & Skills Demonstrated
-
-- **HTML5**: Semantic markup and accessibility best practices
-- **CSS3**: Modern styling with CSS variables, flexbox, grid, and responsive design
-- **Vanilla JavaScript (ES6+)**: Object-oriented programming with classes, async/await, DOM manipulation
-- **API Integration**: RSS feed parsing and CORS handling
-- **Data Analysis**: Sentiment analysis algorithms and forecast generation
-- **Git & GitHub**: Version control and GitHub Pages deployment
-
-## Browser Compatibility
-
-- Chrome (recommended)
-- Firefox
-- Safari
-- Edge
-
-## Project Highlights
-
-- **Modular Code Architecture**: Separated concerns with dedicated modules for news feed, stock management, and forecasting
-- **Error Handling**: Robust error handling with user-friendly fallback messages
-- **Performance**: Optimized for fast loading with minimal dependencies
-- **Accessibility**: Semantic HTML and proper ARIA labels
-- **Responsive Design**: Works seamlessly on desktop, tablet, and mobile devices
-
-## Technical Challenges Solved
-
-- **CORS Issues**: Implemented proxy solutions for RSS feed access
-- **Data Parsing**: Custom RSS feed parsing and transformation
-- **Sentiment Analysis**: Algorithm development for news sentiment scoring
-- **State Management**: Efficient handling of multiple stock selections
-
-## Future Enhancements (Potential)
-
-- Integration with real-time stock APIs (Alpha Vantage, IEX Cloud, etc.)
-- Machine learning models for more accurate predictions
-- Historical data visualization with charts
-- User authentication and saved portfolios
-- Export functionality for forecast reports
 
 ## Notes
 
