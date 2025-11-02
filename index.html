@@ -26,12 +26,16 @@
             <section class="stock-selection-section">
                 <h2>Select Stocks to Forecast</h2>
                 <div class="stock-input-group">
-                    <input 
-                        type="text" 
-                        id="stock-input" 
-                        placeholder="Enter stock symbol (e.g., AAPL, MSFT, GOOGL)"
-                        class="stock-input"
-                    >
+                    <div class="autocomplete-wrapper">
+                        <input 
+                            type="text" 
+                            id="stock-input" 
+                            placeholder="Type to search (e.g., AAPL, MSFT, GOOGL)"
+                            class="stock-input"
+                            autocomplete="off"
+                        >
+                        <div id="autocomplete-dropdown" class="autocomplete-dropdown"></div>
+                    </div>
                     <button id="add-stock-btn" class="btn btn-primary">Add Stock</button>
                 </div>
                 <div id="selected-stocks" class="selected-stocks">
@@ -43,17 +47,10 @@
             <section class="forecast-section">
                 <h2>Forecast Results</h2>
                 <div class="forecast-controls">
-                    <label for="forecast-type">Forecast Type:</label>
-                    <select id="forecast-type" class="forecast-select">
-                        <option value="sentiment">Sentiment Analysis</option>
-                        <option value="trend">Trend Prediction</option>
-                        <option value="volatility">Volatility Forecast</option>
-                        <option value="price">Price Prediction</option>
-                    </select>
                     <button id="generate-forecast-btn" class="btn btn-secondary">Generate Forecast</button>
                 </div>
                 <div id="forecast-results" class="forecast-results">
-                    <p class="empty-message">Select stocks and generate forecast to see results.</p>
+                    <p class="empty-message">Select stocks and generate forecast to see all forecast types.</p>
                 </div>
             </section>
         </main>

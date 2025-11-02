@@ -8,14 +8,13 @@ class ForecastEngine {
         this.newsFeed = newsFeed;
         this.stockManager = stockManager;
         this.forecastResults = document.getElementById('forecast-results');
-        this.forecastType = document.getElementById('forecast-type');
         this.generateBtn = document.getElementById('generate-forecast-btn');
         
         this.generateBtn.addEventListener('click', () => this.generateForecast());
     }
 
     /**
-     * Generate forecast based on selected stocks and forecast type
+     * Generate all forecast types for selected stocks
      */
     async generateForecast() {
         const selectedStocks = this.stockManager.getSelectedStocks();
@@ -24,8 +23,6 @@ class ForecastEngine {
             this.showError('Please select at least one stock to generate forecast.');
             return;
         }
-
-        const forecastType = this.forecastType.value;
         
         // Disable button during generation
         this.generateBtn.disabled = true;
@@ -35,12 +32,12 @@ class ForecastEngine {
             // Get news data
             const newsData = this.newsFeed.getNewsData();
             
-            // Generate forecasts for each stock
-            const forecasts = await Promise.all(
-                selectedStocks.map(symbol => this.generateStockForecast(symbol, forecastType, newsData))
+            // Generate all forecast types for each stock
+            const stockForecasts = await Promise.all(
+                selectedStocks.map(symbol => this.generateAllForecastsForStock(symbol, newsData))
             );
             
-            this.displayForecasts(forecasts, forecastType);
+            this.displayForecasts(stockForecasts);
         } catch (error) {
             console.error('Error generating forecast:', error);
             this.showError('Failed to generate forecast. Please try again.');
@@ -51,25 +48,23 @@ class ForecastEngine {
     }
 
     /**
-     * Generate forecast for a single stock
+     * Generate all forecast types for a single stock
      */
-    async generateStockForecast(symbol, forecastType, newsData) {
+    async generateAllForecastsForStock(symbol, newsData) {
         // Analyze sentiment from news
         const sentiment = this.analyzeSentiment(symbol, newsData);
         
-        // Generate forecast based on type
-        switch (forecastType) {
-            case 'sentiment':
-                return this.generateSentimentForecast(symbol, sentiment);
-            case 'trend':
-                return this.generateTrendForecast(symbol, sentiment);
-            case 'volatility':
-                return this.generateVolatilityForecast(symbol, sentiment);
-            case 'price':
-                return this.generatePriceForecast(symbol, sentiment);
-            default:
-                return this.generateSentimentForecast(symbol, sentiment);
-        }
+        // Generate all forecast types
+        return {
+            symbol,
+            sentiment,
+            forecasts: [
+                this.generateSentimentForecast(symbol, sentiment),
+                this.generateTrendForecast(symbol, sentiment),
+                this.generateVolatilityForecast(symbol, sentiment),
+                this.generatePriceForecast(symbol, sentiment)
+            ]
+        };
     }
 
     /**
@@ -154,6 +149,7 @@ class ForecastEngine {
     generateTrendForecast(symbol, sentiment) {
         const trend = sentiment.score > 10 ? 'Upward' : sentiment.score < -10 ? 'Downward' : 'Sideways';
         const trendColor = sentiment.score > 10 ? 'positive' : sentiment.score < -10 ? 'negative' : '';
+        const sentimentColor = sentiment.score > 20 ? 'positive' : sentiment.score < -20 ? 'negative' : '';
         const strength = Math.abs(sentiment.score) > 50 ? 'Strong' : Math.abs(sentiment.score) > 20 ? 'Moderate' : 'Weak';
         
         return {
@@ -215,31 +211,47 @@ class ForecastEngine {
     }
 
     /**
-     * Display forecasts in the UI
+     * Display forecasts in the UI grouped by stock
      */
-    displayForecasts(forecasts, forecastType) {
-        if (forecasts.length === 0) {
+    displayForecasts(stockForecasts) {
+        if (stockForecasts.length === 0) {
             this.showError('No forecasts generated.');
             return;
         }
 
-        const forecastsHTML = forecasts.map(forecast => {
-            const metricsHTML = forecast.metrics.map(metric => `
-                <div class="metric">
-                    <div class="metric-label">${metric.label}</div>
-                    <div class="metric-value ${metric.class || ''}">${metric.value}</div>
-                </div>
-            `).join('');
+        const forecastsHTML = stockForecasts.map(stockData => {
+            // Generate HTML for all forecast types for this stock
+            const forecastCardsHTML = stockData.forecasts.map(forecast => {
+                const metricsHTML = forecast.metrics.map(metric => `
+                    <div class="metric">
+                        <div class="metric-label">${metric.label}</div>
+                        <div class="metric-value ${metric.class || ''}">${metric.value}</div>
+                    </div>
+                `).join('');
 
+                return `
+                    <div class="forecast-card">
+                        <h3>
+                            <span class="stock-symbol">${forecast.symbol}</span>
+                            ${forecast.type}
+                        </h3>
+                        <p>${forecast.description}</p>
+                        <div class="forecast-metrics">
+                            ${metricsHTML}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Wrap all forecasts for a stock in a container
             return `
-                <div class="forecast-card">
-                    <h3>
-                        <span class="stock-symbol">${forecast.symbol}</span>
-                        ${forecast.type}
-                    </h3>
-                    <p>${forecast.description}</p>
-                    <div class="forecast-metrics">
-                        ${metricsHTML}
+                <div class="stock-forecast-group">
+                    <h2 class="stock-header">
+                        <span class="stock-symbol">${stockData.symbol}</span>
+                        Forecasts
+                    </h2>
+                    <div class="forecasts-container">
+                        ${forecastCardsHTML}
                     </div>
                 </div>
             `;

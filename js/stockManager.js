@@ -9,6 +9,23 @@ class StockManager {
         this.stockInput = document.getElementById('stock-input');
         this.addStockBtn = document.getElementById('add-stock-btn');
         this.selectedStocksContainer = document.getElementById('selected-stocks');
+        this.autocompleteDropdown = document.getElementById('autocomplete-dropdown');
+        this.currentSuggestions = [];
+        this.selectedSuggestionIndex = -1;
+        
+        // Popular stock symbols database
+        this.stockDatabase = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B', 'V', 'JNJ',
+            'WMT', 'MA', 'PG', 'UNH', 'HD', 'DIS', 'PYPL', 'BAC', 'ADBE', 'NFLX',
+            'CRM', 'XOM', 'VZ', 'CVX', 'CSCO', 'ABT', 'COST', 'NKE', 'MRK', 'ACN',
+            'PEP', 'TMO', 'AVGO', 'TXN', 'QCOM', 'DHR', 'ABBV', 'WFC', 'CMCSA', 'HON',
+            'LIN', 'NEE', 'PM', 'RTX', 'BMY', 'ADP', 'UPS', 'GE', 'ELV', 'SBUX',
+            'IBM', 'TJX', 'AMD', 'AMGN', 'SPGI', 'CAT', 'AXP', 'DE', 'INTU', 'GILD',
+            'AMAT', 'BKNG', 'MU', 'ISRG', 'MCO', 'MDT', 'LRCX', 'ADI', 'EQIX', 'ADSK',
+            'CL', 'WM', 'SHW', 'KLAC', 'APH', 'FIS', 'APH', 'CRWD', 'SNPS', 'CDNS',
+            'FTNT', 'ANSS', 'ZS', 'PLTR', 'RBLX', 'SOFI', 'NIO', 'LCID', 'RIVN', 'GME',
+            'AMC', 'BBBY', 'SPCE', 'HOOD', 'OPEN', 'WISH', 'CLOV', 'PROG', 'SNDL', 'CLNE'
+        ].sort();
         
         this.initializeEventListeners();
     }
@@ -20,17 +37,178 @@ class StockManager {
         // Add stock on button click
         this.addStockBtn.addEventListener('click', () => this.addStock());
         
-        // Add stock on Enter key press
-        this.stockInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.addStock();
+        // Handle input for autocomplete
+        this.stockInput.addEventListener('input', (e) => {
+            this.handleInput(e.target.value);
+        });
+
+        // Handle keyboard navigation in autocomplete
+        this.stockInput.addEventListener('keydown', (e) => {
+            this.handleKeydown(e);
+        });
+
+        // Hide dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            const isInputClick = e.target === this.stockInput || this.stockInput.contains(e.target);
+            const isDropdownClick = this.autocompleteDropdown && 
+                                   (this.autocompleteDropdown.contains(e.target) || 
+                                    e.target.closest('.autocomplete-dropdown'));
+            
+            if (!isInputClick && !isDropdownClick && 
+                this.autocompleteDropdown.style.display === 'block') {
+                this.hideDropdown();
             }
         });
 
-        // Clear input on focus
+        // Show suggestions on focus if there's text
         this.stockInput.addEventListener('focus', () => {
-            this.stockInput.value = '';
+            if (this.stockInput.value.length > 0) {
+                this.handleInput(this.stockInput.value);
+            }
         });
+    }
+
+    /**
+     * Handle input changes for autocomplete
+     */
+    handleInput(value) {
+        const query = value.trim().toUpperCase();
+        
+        if (query.length === 0) {
+            this.hideDropdown();
+            return;
+        }
+
+        // Filter stock symbols that match the query
+        const matches = this.stockDatabase.filter(symbol => 
+            symbol.startsWith(query) && !this.selectedStocks.has(symbol)
+        ).slice(0, 10); // Limit to 10 suggestions
+
+        this.currentSuggestions = matches;
+        this.selectedSuggestionIndex = -1;
+
+        if (matches.length > 0) {
+            this.showSuggestions(matches, query);
+        } else {
+            this.hideDropdown();
+        }
+    }
+
+    /**
+     * Show autocomplete suggestions
+     */
+    showSuggestions(suggestions, query) {
+        const suggestionsHTML = suggestions.map((symbol, index) => {
+            const highlightedSymbol = this.highlightMatch(symbol, query);
+            return `
+                <div class="suggestion-item" data-index="${index}" data-symbol="${symbol}">
+                    ${highlightedSymbol}
+                </div>
+            `;
+        }).join('');
+
+        this.autocompleteDropdown.innerHTML = suggestionsHTML;
+        this.autocompleteDropdown.style.display = 'block';
+
+        // Add click handlers to suggestions
+        this.autocompleteDropdown.querySelectorAll('.suggestion-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const symbol = item.getAttribute('data-symbol');
+                this.selectSuggestion(symbol);
+            });
+        });
+    }
+
+    /**
+     * Highlight matching part of the symbol
+     */
+    highlightMatch(symbol, query) {
+        if (query.length === 0) return symbol;
+        const index = symbol.toUpperCase().indexOf(query.toUpperCase());
+        if (index === -1) return symbol;
+        
+        const before = symbol.substring(0, index);
+        const match = symbol.substring(index, index + query.length);
+        const after = symbol.substring(index + query.length);
+        
+        return `${before}<strong>${match}</strong>${after}`;
+    }
+
+    /**
+     * Hide autocomplete dropdown
+     */
+    hideDropdown() {
+        this.autocompleteDropdown.style.display = 'none';
+        this.currentSuggestions = [];
+        this.selectedSuggestionIndex = -1;
+    }
+
+    /**
+     * Handle keyboard navigation
+     */
+    handleKeydown(e) {
+        if (!this.autocompleteDropdown.style.display || this.autocompleteDropdown.style.display === 'none') {
+            if (e.key === 'Enter') {
+                this.addStock();
+            }
+            return;
+        }
+
+        const suggestions = this.autocompleteDropdown.querySelectorAll('.suggestion-item');
+        
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                this.selectedSuggestionIndex = Math.min(
+                    this.selectedSuggestionIndex + 1,
+                    suggestions.length - 1
+                );
+                this.updateHighlightedSuggestion(suggestions);
+                break;
+            
+            case 'ArrowUp':
+                e.preventDefault();
+                this.selectedSuggestionIndex = Math.max(this.selectedSuggestionIndex - 1, -1);
+                this.updateHighlightedSuggestion(suggestions);
+                break;
+            
+            case 'Enter':
+                e.preventDefault();
+                if (this.selectedSuggestionIndex >= 0 && suggestions[this.selectedSuggestionIndex]) {
+                    const symbol = suggestions[this.selectedSuggestionIndex].getAttribute('data-symbol');
+                    this.selectSuggestion(symbol);
+                } else {
+                    this.addStock();
+                }
+                break;
+            
+            case 'Escape':
+                e.preventDefault();
+                this.hideDropdown();
+                break;
+        }
+    }
+
+    /**
+     * Update highlighted suggestion in dropdown
+     */
+    updateHighlightedSuggestion(suggestions) {
+        suggestions.forEach((item, index) => {
+            if (index === this.selectedSuggestionIndex) {
+                item.classList.add('highlighted');
+            } else {
+                item.classList.remove('highlighted');
+            }
+        });
+    }
+
+    /**
+     * Select a suggestion from autocomplete
+     */
+    selectSuggestion(symbol) {
+        this.stockInput.value = symbol;
+        this.addStock();
+        this.hideDropdown();
     }
 
     /**
@@ -57,6 +235,7 @@ class StockManager {
         this.selectedStocks.add(symbol);
         this.updateDisplay();
         this.stockInput.value = '';
+        this.hideDropdown();
         this.showMessage(`${symbol} added successfully`, 'success');
     }
 
