@@ -332,11 +332,13 @@ section h2 {
 }
 
 .tab-panel {
-    display: none;
+    display: none !important;
+    visibility: hidden;
 }
 
 .tab-panel.active {
     display: block !important;
+    visibility: visible !important;
     animation: fadeIn 0.3s ease-in;
 }
 
