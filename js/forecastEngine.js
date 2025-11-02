@@ -10,6 +10,14 @@ class ForecastEngine {
         this.forecastResults = document.getElementById('forecast-results');
         this.generateBtn = document.getElementById('generate-forecast-btn');
         
+        // Initialize relevancy analyzer if available
+        if (typeof RelevancyAnalyzer !== 'undefined') {
+            this.relevancyAnalyzer = new RelevancyAnalyzer();
+        } else {
+            console.warn('RelevancyAnalyzer not loaded - using basic algorithm');
+            this.relevancyAnalyzer = null;
+        }
+        
         if (!this.forecastResults || !this.generateBtn) {
             console.error('ForecastEngine: Required DOM elements not found', {
                 forecastResults: !!this.forecastResults,
@@ -174,91 +182,194 @@ class ForecastEngine {
     }
 
     /**
-     * Check if article is relevant to stock
+     * Check if article is relevant to stock (quick check)
+     * Uses advanced relevancy analyzer if available, falls back to basic algorithm
      */
     isRelevantToStock(symbol, article) {
-        // Check if article mentions the stock symbol or company name
-        const text = (article.title + ' ' + (article.contentSnippet || article.description || '') + ' ' + (article.link || '')).toLowerCase();
-        
-        // Common stock symbol patterns (e.g., AAPL, $AAPL, Apple Inc)
-        const symbolPattern = new RegExp(`\\b${symbol.toLowerCase()}\\b|\\$${symbol.toLowerCase()}\\b`);
-        
-        // Company name mapping (common stocks)
-        const companyNames = {
-            'AAPL': ['apple', 'aapl'],
-            'MSFT': ['microsoft', 'msft'],
-            'GOOGL': ['google', 'alphabet', 'googl'],
-            'AMZN': ['amazon', 'amzn'],
-            'NVDA': ['nvidia', 'nvda'],
-            'META': ['facebook', 'meta', 'fb'],
-            'TSLA': ['tesla', 'tsla'],
-            'NFLX': ['netflix', 'nflx'],
-            'AMD': ['advanced micro devices', 'amd'],
-            'INTC': ['intel', 'intc']
-        };
-        
-        if (symbolPattern.test(text)) {
-            return true;
+        // Use advanced relevancy analyzer if available
+        if (this.relevancyAnalyzer) {
+            const score = this.relevancyAnalyzer.scoreArticleRelevance(symbol, article);
+            return score >= 30;
         }
         
-        // Check company name
-        if (companyNames[symbol]) {
-            const names = companyNames[symbol];
-            return names.some(name => text.includes(name));
-        }
-        
-        // If it's general market news and mentions stock market terms, consider it relevant
-        const marketTerms = ['stock', 'market', 'trading', 'investor', 'share', 'equity', 'nasdaq', 'nyse', 'dow', 's&p', 'sp500'];
-        const hasMarketTerms = marketTerms.some(term => text.includes(term));
-        
-        return hasMarketTerms;
+        // Fallback to basic algorithm
+        const score = this.scoreArticleRelevance(symbol, article);
+        return score >= 30;
     }
 
     /**
      * Score article relevance to a stock (higher = more relevant)
+     * Improved algorithm with better company name matching and context
      */
     scoreArticleRelevance(symbol, article) {
-        const text = (article.title + ' ' + (article.contentSnippet || article.description || '') + ' ' + (article.link || '')).toLowerCase();
+        const title = (article.title || '').toLowerCase();
+        const description = ((article.contentSnippet || article.description || '') + ' ' + (article.link || '')).toLowerCase();
+        const fullText = title + ' ' + description;
         let score = 0;
         
-        // Direct symbol match in title (highest relevance)
-        if (article.title && article.title.toLowerCase().includes(symbol.toLowerCase())) {
-            score += 100;
-        }
-        
-        // Symbol pattern match (e.g., AAPL, $AAPL)
-        const symbolPattern = new RegExp(`\\b${symbol.toLowerCase()}\\b|\\$${symbol.toLowerCase()}\\b`);
-        if (symbolPattern.test(text)) {
-            score += 50;
-        }
-        
-        // Company name match
-        const companyNames = {
-            'AAPL': ['apple inc', 'apple'],
-            'MSFT': ['microsoft', 'msft'],
-            'GOOGL': ['google', 'alphabet', 'googl'],
-            'AMZN': ['amazon', 'amzn'],
-            'NVDA': ['nvidia', 'nvda'],
-            'META': ['facebook', 'meta', 'fb'],
-            'TSLA': ['tesla', 'tsla'],
-            'NFLX': ['netflix', 'nflx'],
-            'AMD': ['advanced micro devices', 'amd'],
-            'INTC': ['intel', 'intc']
+        // Comprehensive company database with names, tickers, products, and key people
+        const companyData = {
+            'AAPL': {
+                names: ['apple', 'apple inc', 'apple computer', 'apples'],
+                products: ['iphone', 'ipad', 'macbook', 'imac', 'airpods', 'apple watch', 'app store', 'ios', 'macos', 'safari'],
+                keywords: ['tim cook', 'apple store', 'app store', 'apple pay', 'apple tv'],
+                exclude: ['apple pie', 'apple cider', 'apple tree'] // Avoid false positives
+            },
+            'MSFT': {
+                names: ['microsoft', 'msft'],
+                products: ['windows', 'office', 'azure', 'xbox', 'surface', 'bing', 'teams', 'outlook', 'excel', 'word', 'powerpoint'],
+                keywords: ['satya nadella', 'microsoft office', 'windows 11', 'microsoft cloud'],
+                exclude: []
+            },
+            'GOOGL': {
+                names: ['google', 'alphabet', 'googl', 'goog'],
+                products: ['android', 'chrome', 'youtube', 'gmail', 'maps', 'search', 'pixel', 'google cloud', 'drive'],
+                keywords: ['sundar pichai', 'google search', 'google ads', 'adwords', 'google play'],
+                exclude: []
+            },
+            'AMZN': {
+                names: ['amazon', 'amzn', 'amazon.com'],
+                products: ['aws', 'alexa', 'echo', 'kindle', 'prime', 'prime video', 'amazon web services'],
+                keywords: ['jeff bezos', 'andy jassy', 'amazon prime', 'amazon web services'],
+                exclude: ['amazon rainforest', 'amazon river']
+            },
+            'NVDA': {
+                names: ['nvidia', 'nvda'],
+                products: ['gpu', 'graphics card', 'geforce', 'rtx', 'cuda', 'tensor', 'a100', 'h100', 'dlss'],
+                keywords: ['jensen huang', 'nvidia gpu', 'artificial intelligence', 'ai chip', 'data center'],
+                exclude: []
+            },
+            'META': {
+                names: ['meta', 'facebook', 'fb', 'meta platforms'],
+                products: ['instagram', 'whatsapp', 'oculus', 'metaverse', 'reality labs', 'facebook messenger'],
+                keywords: ['mark zuckerberg', 'meta platforms', 'virtual reality', 'vr', 'ar'],
+                exclude: ['facebook marketplace'] // Can be ambiguous
+            },
+            'TSLA': {
+                names: ['tesla', 'tsla'],
+                products: ['model 3', 'model y', 'model s', 'model x', 'cybertruck', 'tesla vehicle', 'supercharger'],
+                keywords: ['elon musk', 'tesla motors', 'electric vehicle', 'ev', 'autopilot', 'fsd', 'full self driving'],
+                exclude: ['tesla coil', 'nikola tesla']
+            },
+            'NFLX': {
+                names: ['netflix', 'nflx'],
+                products: ['netflix streaming', 'netflix original'],
+                keywords: ['netflix subscribers', 'streaming service', 'netflix content'],
+                exclude: []
+            },
+            'AMD': {
+                names: ['amd', 'advanced micro devices'],
+                products: ['ryzen', 'epyc', 'radeon', 'gpu', 'cpu', 'xilinx'],
+                keywords: ['lisa su', 'amd processor', 'amd graphics'],
+                exclude: []
+            },
+            'INTC': {
+                names: ['intel', 'intc'],
+                products: ['core i7', 'core i9', 'xeon', 'pentium', 'celeron', 'intel processor'],
+                keywords: ['pat gelsinger', 'intel chip', 'intel processor'],
+                exclude: ['intellectual property']
+            },
+            'DIS': {
+                names: ['disney', 'dis'],
+                products: ['disney+', 'disney plus', 'marvel', 'star wars', 'pixar', 'espn', 'abc', 'hulu'],
+                keywords: ['bob iger', 'disney theme park', 'disneyland', 'disney world'],
+                exclude: []
+            },
+            'JPM': {
+                names: ['jpmorgan', 'jp morgan', 'jpm', 'jpmorgan chase'],
+                keywords: ['jamie dimon', 'jpmorgan chase', 'chase bank'],
+                exclude: []
+            },
+            'BAC': {
+                names: ['bank of america', 'bofa', 'bac'],
+                keywords: ['bank of america', 'merrill lynch'],
+                exclude: []
+            }
         };
         
-        if (companyNames[symbol]) {
-            companyNames[symbol].forEach(name => {
-                if (text.includes(name)) {
+        const company = companyData[symbol];
+        if (!company) {
+            // For unknown stocks, use basic matching
+            const symbolPattern = new RegExp(`\\b${symbol.toLowerCase()}\\b|\\$${symbol.toLowerCase()}\\b`);
+            if (symbolPattern.test(fullText)) {
+                score += 50;
+            }
+            return score;
+        }
+        
+        // 1. Symbol match in title (highest relevance) - must be word boundary
+        const symbolPattern = new RegExp(`\\b${symbol.toLowerCase()}\\b|\\$${symbol.toLowerCase()}\\b`);
+        if (title && symbolPattern.test(title)) {
+            score += 150; // Very high score for symbol in title
+        } else if (symbolPattern.test(fullText)) {
+            score += 80; // Good score for symbol anywhere
+        }
+        
+        // 2. Company name match in title (high relevance)
+        company.names.forEach(name => {
+            // Use word boundary to avoid false matches
+            const namePattern = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            if (title && namePattern.test(title)) {
+                score += 100; // High score for company name in title
+            } else if (namePattern.test(fullText)) {
+                score += 60; // Medium score for company name in content
+            }
+        });
+        
+        // 3. Product names (medium-high relevance)
+        if (company.products) {
+            company.products.forEach(product => {
+                const productPattern = new RegExp(`\\b${product.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                if (title && productPattern.test(title)) {
+                    score += 70;
+                } else if (productPattern.test(fullText)) {
+                    score += 40;
+                }
+            });
+        }
+        
+        // 4. Key people and executives (medium relevance)
+        if (company.keywords) {
+            company.keywords.forEach(keyword => {
+                const keywordPattern = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                if (keywordPattern.test(fullText)) {
                     score += 30;
                 }
             });
         }
         
-        // Stock market terms (lower relevance)
-        const marketTerms = ['stock', 'trading', 'investor', 'share', 'equity', 'nasdaq', 'nyse'];
-        const hasMarketTerms = marketTerms.some(term => text.includes(term));
-        if (hasMarketTerms && score === 0) {
-            score += 5;
+        // 5. Check for false positives (exclude terms) - reduce score if matched
+        if (company.exclude && company.exclude.length > 0) {
+            let hasExclusion = false;
+            company.exclude.forEach(excludeTerm => {
+                if (fullText.includes(excludeTerm)) {
+                    hasExclusion = true;
+                }
+            });
+            // If we only matched an exclusion term, reduce score significantly
+            if (hasExclusion && score < 50) {
+                score = 0; // Likely false positive
+            } else if (hasExclusion) {
+                score = Math.max(0, score - 50); // Reduce but don't eliminate
+            }
+        }
+        
+        // 6. Context boost: If article mentions both company and financial terms together
+        const financialTerms = ['earnings', 'revenue', 'profit', 'loss', 'stock', 'shares', 'dividend', 'quarterly', 'analyst', 'forecast', 'price target'];
+        const hasFinancialContext = financialTerms.some(term => fullText.includes(term));
+        if (hasFinancialContext && score > 30) {
+            score += 20; // Boost articles with financial context
+        }
+        
+        // 7. Filter out very generic market news (lower score threshold)
+        if (score < 50) {
+            // Only accept generic market news if it has strong financial context AND mentions the stock
+            if (hasFinancialContext && symbolPattern.test(fullText)) {
+                score += 15; // Small boost for financial news mentioning symbol
+            } else {
+                // Too generic, don't include unless direct match
+                return score < 50 ? 0 : score;
+            }
         }
         
         return score;
@@ -279,11 +390,16 @@ class ForecastEngine {
         const positiveKeywords = ['up', 'gain', 'rise', 'surge', 'bullish', 'growth', 'profit', 'strong', 'beat', 'positive', 'win', 'success', 'outperform'];
         const negativeKeywords = ['down', 'fall', 'drop', 'decline', 'bearish', 'loss', 'weak', 'miss', 'negative', 'concern', 'fail', 'plunge', 'crash'];
 
-        // Score and filter relevant articles
+        // Score and filter relevant articles with advanced algorithm
         const scoredArticles = [];
         newsData.forEach(article => {
-            const relevanceScore = this.scoreArticleRelevance(symbol, article);
-            if (relevanceScore > 0) { // Only include relevant articles
+            // Use advanced relevancy analyzer if available
+            const relevanceScore = this.relevancyAnalyzer 
+                ? this.relevancyAnalyzer.scoreArticleRelevance(symbol, article, newsData)
+                : this.scoreArticleRelevance(symbol, article);
+            
+            // Require minimum relevance score of 30 to filter out generic/barely relevant articles
+            if (relevanceScore >= 30) {
                 const text = (article.title + ' ' + (article.contentSnippet || article.description || '')).toLowerCase();
                 
                 let positiveCount = 0;
@@ -306,8 +422,17 @@ class ForecastEngine {
             }
         });
 
-        // Sort by relevance (highest first) and take top 100
-        scoredArticles.sort((a, b) => b.relevanceScore - a.relevanceScore);
+        // Sort by relevance (highest first) and take top 100 most relevant
+        scoredArticles.sort((a, b) => {
+            // First sort by relevance score
+            if (b.relevanceScore !== a.relevanceScore) {
+                return b.relevanceScore - a.relevanceScore;
+            }
+            // If same relevance, prefer articles with more sentiment keywords
+            const aSentiment = a.positiveCount + a.negativeCount;
+            const bSentiment = b.positiveCount + b.negativeCount;
+            return bSentiment - aSentiment;
+        });
         const topArticles = scoredArticles.slice(0, 100);
 
         const categorized = {

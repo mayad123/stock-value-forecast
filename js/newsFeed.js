@@ -302,29 +302,82 @@ class NewsFeed {
                 clearTimeout(timeoutId);
                 
                 if (!response.ok) {
-                    if (response.status === 422) {
+                    if (response.status === 422 || response.status === 429) {
+                        // 422 = Unprocessable Entity, 429 = Too Many Requests (rate limit)
                         lastErrorWas422 = true;
                         continue; // Try next source instead of breaking
                     }
-                    throw new Error(`HTTP ${response.status}`);
+                    // For other errors, try next source
+                    continue;
                 }
                 
                 // Parse response based on method
                 let data;
                 if (parseMethod === 'xml') {
                     // Parse RSS XML directly
+                    const contentType = response.headers.get('content-type') || '';
+                    // Check if response is actually XML
+                    if (!contentType.includes('xml') && !contentType.includes('text/xml') && !contentType.includes('application/xml')) {
+                        // Not XML content type, skip
+                        continue;
+                    }
+                    
                     const xmlText = await response.text();
+                    // Check if response is actually XML, not HTML error page
+                    const trimmed = xmlText.trim();
+                    if (!trimmed.startsWith('<?xml') && !trimmed.startsWith('<rss') && !trimmed.startsWith('<feed')) {
+                        // Likely an HTML error page or JSON error, skip
+                        continue;
+                    }
                     data = this.parseRSSXML(xmlText);
+                    if (!data || !data.items || data.items.length === 0) {
+                        continue; // Invalid XML, try next source
+                    }
                 } else if (parseMethod === 'allorigins') {
-                    const wrapper = await response.json();
-                    if (wrapper.contents) {
-                        data = this.parseRSSXML(wrapper.contents);
-                    } else {
-                        throw new Error('AllOrigins format error');
+                    try {
+                        const wrapper = await response.json();
+                        if (wrapper.contents) {
+                            // Check if contents is valid XML
+                            const contents = wrapper.contents.trim();
+                            if (!contents.startsWith('<?xml') && !contents.startsWith('<rss')) {
+                                // Likely an HTML error page, skip
+                                continue;
+                            }
+                            data = this.parseRSSXML(wrapper.contents);
+                            if (!data || !data.items || data.items.length === 0) {
+                                continue; // Invalid XML, try next source
+                            }
+                        } else {
+                            continue; // No contents, try next source
+                        }
+                    } catch (e) {
+                        // JSON parse error, try next source
+                        continue;
                     }
                 } else {
-                    // Standard JSON response
-                    data = await response.json();
+                    // Standard JSON response (RSS2JSON or similar)
+                    try {
+                        const contentType = response.headers.get('content-type') || '';
+                        // Check if response is JSON
+                        if (!contentType.includes('json') && !contentType.includes('application/json')) {
+                            // Not JSON, might be HTML error page, skip
+                            continue;
+                        }
+                        
+                        data = await response.json();
+                        // Check if response is an error
+                        if (data.error || data.status === 'error' || (data.message && data.status)) {
+                            // API returned error (common for rate limits like 422)
+                            continue; // Try next source
+                        }
+                        // Validate data structure
+                        if (!data || (!data.items && !data.feed)) {
+                            continue; // Invalid structure, try next source
+                        }
+                    } catch (e) {
+                        // JSON parse error, try next source
+                        continue;
+                    }
                 }
                 
                 // Check if data is valid and extract items
@@ -366,12 +419,19 @@ class NewsFeed {
             } catch (error) {
                 if (timeoutId) clearTimeout(timeoutId);
                 
-                // Don't log timeout errors
+                // Don't log timeout errors or 422/429 errors (rate limits)
                 if (error.name !== 'AbortError') {
-                    // Only log non-422 errors
                     const errorMsg = error.message || '';
-                    if (!errorMsg.includes('422') && !errorMsg.includes('RSS feed unavailable') && !errorMsg.includes('CORS')) {
-                        // Silently continue - try next source
+                    const statusCode = errorMsg.match(/HTTP (\d+)/);
+                    // Skip logging for common non-critical errors
+                    if (statusCode && (statusCode[1] === '422' || statusCode[1] === '429')) {
+                        // Rate limit or unprocessable entity - silently continue
+                    } else if (!errorMsg.includes('422') && !errorMsg.includes('429') && 
+                               !errorMsg.includes('RSS feed unavailable') && 
+                               !errorMsg.includes('CORS') &&
+                               !errorMsg.includes('XML parsing')) {
+                        // Only log unexpected errors
+                        console.warn(`RSS source failed: ${errorMsg}`);
                     }
                 }
                 // Continue to next source
@@ -389,13 +449,26 @@ class NewsFeed {
      */
     parseRSSXML(xmlText) {
         try {
+            // Validate that we have XML content
+            if (!xmlText || typeof xmlText !== 'string' || xmlText.trim().length === 0) {
+                return { items: [] };
+            }
+            
+            // Check if it's actually XML/RSS, not HTML error page
+            const trimmed = xmlText.trim();
+            if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
+                // This is HTML, not XML - likely an error page
+                return { items: [] };
+            }
+            
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
             
             // Check for parsing errors
             const parserError = xmlDoc.querySelector('parsererror');
             if (parserError) {
-                throw new Error('XML parsing error');
+                // XML parsing failed, return empty items
+                return { items: [] };
             }
             
             const items = xmlDoc.querySelectorAll('item');
@@ -474,7 +547,13 @@ class NewsFeed {
             
             return { items: parsedItems };
         } catch (error) {
-            console.error('Error parsing RSS XML:', error);
+            // Only log parsing errors that aren't expected (HTML pages, etc.)
+            if (!error.message || !error.message.includes('XML parsing')) {
+                // Silently return empty items for expected failures
+                return { items: [] };
+            }
+            // Log unexpected parsing errors
+            console.warn('RSS XML parsing issue:', error.message);
             return { items: [] };
         }
     }
