@@ -295,7 +295,7 @@ class RelevancyAnalyzer {
         
         // Collect all possible terms from company database
         Object.values(this.companyDatabase).forEach(company => {
-            allTerms.add(company.names);
+            allTerms.add(...company.names);
             if (company.products) allTerms.add(...company.products);
             if (company.keywords) allTerms.add(...company.keywords);
         });
