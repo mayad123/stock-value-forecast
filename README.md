@@ -1,7 +1,5 @@
 # 📈 Stock Value Forecast
 
-Live at: `https://mayad123.github.io/stock-value-forecast/`
-
 A GitHub Pages project showcasing a stock forecasting web application that integrates Yahoo Finance news feed and provides multiple forecast options based on sentiment analysis. This project demonstrates front-end web development skills including HTML5, CSS3, and vanilla JavaScript.
 
 ## Features

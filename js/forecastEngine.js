@@ -473,13 +473,13 @@ class ForecastEngine {
                     </h2>
                     <div class="tabs-container">
                         <div class="tabs-nav">
-                            <button class="tab-btn active" data-tab="summary-${stockData.symbol}" onclick="forecastEngine.switchTab('${stockData.symbol}', 'summary')">
+                            <button class="tab-btn active" data-tab="summary" data-symbol="${stockData.symbol}">
                                 Forecast Summary
                             </button>
-                            <button class="tab-btn" data-tab="articles-${stockData.symbol}" onclick="forecastEngine.switchTab('${stockData.symbol}', 'articles')">
+                            <button class="tab-btn" data-tab="articles" data-symbol="${stockData.symbol}">
                                 News Articles
                             </button>
-                            <button class="tab-btn" data-tab="chart-${stockData.symbol}" onclick="forecastEngine.switchTab('${stockData.symbol}', 'chart')">
+                            <button class="tab-btn" data-tab="chart" data-symbol="${stockData.symbol}">
                                 Price Chart
                             </button>
                         </div>
@@ -504,6 +504,25 @@ class ForecastEngine {
         }).filter(html => html.trim().length > 0).join('');
 
         this.forecastResults.innerHTML = stocksHTML;
+        
+        // Attach event listeners to tab buttons after HTML is inserted
+        this.attachTabListeners();
+    }
+
+    /**
+     * Attach event listeners to tab buttons
+     */
+    attachTabListeners() {
+        const tabButtons = this.forecastResults.querySelectorAll('.tab-btn');
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const symbol = btn.getAttribute('data-symbol');
+                const tabType = btn.getAttribute('data-tab');
+                if (symbol && tabType) {
+                    this.switchTab(symbol, tabType);
+                }
+            });
+        });
     }
 
     /**
