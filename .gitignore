@@ -38,3 +38,6 @@ build/
 *.min.js
 *.min.css
 
+# API Configuration - Contains sensitive credentials
+config.js
+

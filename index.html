@@ -61,6 +61,25 @@
         </footer>
     </div>
 
+    <!-- Load API configuration (optional - app works without it) -->
+    <script>
+        // Create default CONFIG object if config.js doesn't exist
+        if (typeof CONFIG === 'undefined') {
+            var CONFIG = {
+                yahoo: {
+                    consumerKey: null,
+                    consumerSecret: null,
+                    apiKey: null,
+                    apiHost: null,
+                    apiBaseUrl: 'https://query1.finance.yahoo.com/v1',
+                    newsApiUrl: 'https://feeds.finance.yahoo.com/rss/2.0/headline'
+                },
+                // Optional: Backend proxy URL (deploy serverless function for shared API access)
+                backendProxy: null // e.g., 'https://your-app.vercel.app/api/yahoo'
+            };
+        }
+    </script>
+    <script src="config.js" onerror="console.log('config.js not found - using public APIs')"></script>
     <script src="js/newsFeed.js"></script>
     <script src="js/stockManager.js"></script>
     <script src="js/forecastEngine.js"></script>

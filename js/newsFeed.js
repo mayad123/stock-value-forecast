@@ -1,20 +1,202 @@
 /**
  * News Feed Module
  * Handles fetching and displaying Yahoo Finance news feed
+ * Supports Yahoo API authentication via OAuth 1.0
  */
 
 class NewsFeed {
     constructor() {
         this.newsContainer = document.getElementById('news-feed');
         this.newsData = [];
+        this.hasApiCredentials = this.checkApiCredentials();
+    }
+
+    /**
+     * Check if API credentials are configured
+     */
+    checkApiCredentials() {
+        return typeof CONFIG !== 'undefined' && 
+               CONFIG.yahoo && 
+               CONFIG.yahoo.consumerKey && 
+               CONFIG.yahoo.consumerKey !== 'YOUR_YAHOO_CONSUMER_KEY_HERE' &&
+               CONFIG.yahoo.consumerSecret &&
+               CONFIG.yahoo.consumerSecret !== 'YOUR_YAHOO_CONSUMER_SECRET_HERE';
+    }
+
+    /**
+     * Generate OAuth 1.0 signature for Yahoo API requests
+     * Note: For production, OAuth secrets should be kept on a backend server
+     */
+    async generateOAuthSignature(method, url, params = {}) {
+        if (!this.hasApiCredentials) {
+            throw new Error('API credentials not configured');
+        }
+
+        // OAuth 1.0 parameters
+        const oauthParams = {
+            oauth_consumer_key: CONFIG.yahoo.consumerKey,
+            oauth_signature_method: 'HMAC-SHA1',
+            oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+            oauth_nonce: Math.random().toString(36).substring(2, 15),
+            oauth_version: '1.0'
+        };
+
+        // Merge all parameters
+        const allParams = { ...oauthParams, ...params };
+
+        // Sort parameters alphabetically
+        const sortedKeys = Object.keys(allParams).sort();
+        const normalizedParams = sortedKeys.map(key => 
+            `${encodeURIComponent(key)}=${encodeURIComponent(allParams[key])}`
+        ).join('&');
+
+        // Create signature base string
+        const baseString = `${method.toUpperCase()}&${encodeURIComponent(url)}&${encodeURIComponent(normalizedParams)}`;
+
+        // Create signing key
+        const signingKey = `${encodeURIComponent(CONFIG.yahoo.consumerSecret)}&`;
+
+        // Generate HMAC-SHA1 signature (using Web Crypto API)
+        oauthParams.oauth_signature = await this.hmacSha1(baseString, signingKey);
+
+        return oauthParams;
+    }
+
+    /**
+     * Simple HMAC-SHA1 implementation
+     * Note: For production, use a proper crypto library like crypto-js
+     */
+    async hmacSha1(message, key) {
+        // Import key
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode(key);
+        const messageData = encoder.encode(message);
+
+        const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            keyData,
+            { name: 'HMAC', hash: 'SHA-1' },
+            false,
+            ['sign']
+        );
+
+        // Sign
+        const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+
+        // Convert to base64
+        return btoa(String.fromCharCode(...new Uint8Array(signature)));
+    }
+
+    /**
+     * Fetch news using backend proxy (recommended for shared access)
+     * The backend proxy holds API credentials securely server-side
+     */
+    async fetchNewsWithBackendProxy() {
+        if (!CONFIG || !CONFIG.backendProxy) {
+            return null;
+        }
+
+        try {
+            const response = await fetch(`${CONFIG.backendProxy}?type=news`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.items && Array.isArray(data.items)) {
+                    this.newsData = data.items.slice(0, 10);
+                    this.displayNews();
+                    return true;
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching news via backend proxy:', error);
+        }
+        return null;
+    }
+
+    /**
+     * Fetch news using Yahoo API with OAuth authentication
+     */
+    async fetchNewsWithYahooAPI() {
+        if (!this.hasApiCredentials) {
+            return null;
+        }
+
+        try {
+            // Yahoo Finance API endpoint for news
+            // Note: Adjust endpoint based on your Yahoo API version
+            const apiUrl = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved';
+            
+            // Generate OAuth signature
+            const oauthParams = await this.generateOAuthSignature('GET', apiUrl);
+            
+            // Build authorization header
+            const authHeader = 'OAuth ' + Object.keys(oauthParams)
+                .map(key => `${encodeURIComponent(key)}="${encodeURIComponent(oauthParams[key])}"`)
+                .join(', ');
+
+            // Alternative: Use RapidAPI if configured
+            if (CONFIG.yahoo.apiKey && CONFIG.yahoo.apiHost) {
+                const response = await fetch(`https://${CONFIG.yahoo.apiHost}/finance/news`, {
+                    method: 'GET',
+                    headers: {
+                        'X-RapidAPI-Key': CONFIG.yahoo.apiKey,
+                        'X-RapidAPI-Host': CONFIG.yahoo.apiHost
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && data.items) {
+                        this.newsData = data.items.slice(0, 10);
+                        this.displayNews();
+                        return true;
+                    }
+                }
+            }
+
+            // For direct Yahoo API (may require backend proxy due to CORS)
+            // This is a placeholder - adjust based on actual Yahoo API endpoints
+            console.log('Yahoo API OAuth configured. Note: Direct API calls may require a backend proxy due to CORS restrictions.');
+            
+            return null;
+        } catch (error) {
+            console.error('Error fetching news with Yahoo API:', error);
+            return null;
+        }
     }
 
     /**
      * Fetch news from Yahoo Finance RSS feed
+     * Priority order:
+     * 1. Backend proxy (if configured - recommended for shared access)
+     * 2. Yahoo API with OAuth (if credentials are configured)
+     * 3. Public RSS feeds (works for everyone without setup)
      * Note: Yahoo Finance RSS feeds are publicly available
-     * Uses multiple fallback strategies for reliability
      */
     async fetchNews() {
+        // Try backend proxy first (best option - credentials stay on server)
+        if (CONFIG && CONFIG.backendProxy) {
+            const proxyResult = await this.fetchNewsWithBackendProxy();
+            if (proxyResult) {
+                return; // Successfully fetched from backend proxy
+            }
+        }
+
+        // Try Yahoo API with OAuth if credentials are configured
+        if (this.hasApiCredentials) {
+            const apiResult = await this.fetchNewsWithYahooAPI();
+            if (apiResult) {
+                return; // Successfully fetched from API
+            }
+            // If API fails, fall back to RSS methods below
+        }
+
+        // Use public RSS feeds (no credentials needed)
         // Try multiple RSS sources and proxy services with different approaches
         const rssSources = [
             // Method 1: RSS2JSON API (may require API key for unlimited access)

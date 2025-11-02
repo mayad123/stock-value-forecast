@@ -1,0 +1,8 @@
+[build]
+  # No build command needed - static site
+  publish = "."
+
+[functions]
+  # Netlify functions are in netlify/functions/
+  directory = "netlify/functions"
+
