@@ -354,9 +354,56 @@ class NewsFeed {
                 const description = item.querySelector('description')?.textContent || '';
                 const link = item.querySelector('link')?.textContent || '';
                 const pubDate = item.querySelector('pubDate')?.textContent || '';
-                const author = item.querySelector('author')?.textContent || 
-                              item.querySelector('dc\\:creator')?.textContent || 
-                              item.querySelector('creator')?.textContent || '';
+                
+                // Try multiple ways to get author/source
+                let author = item.querySelector('author')?.textContent || 
+                            item.querySelector('dc\\:creator')?.textContent || 
+                            item.querySelector('creator')?.textContent || '';
+                
+                // Try to get source from source tag
+                const sourceTag = item.querySelector('source');
+                if (sourceTag) {
+                    const sourceText = sourceTag.textContent || sourceTag.getAttribute('url') || '';
+                    if (sourceText && !author) {
+                        author = sourceText;
+                    }
+                }
+                
+                // Extract source from link domain if no author found
+                if (!author && link) {
+                    try {
+                        const url = new URL(link);
+                        // Extract domain and clean it up
+                        let domain = url.hostname.replace('www.', '');
+                        // Capitalize common news domains
+                        const domainMap = {
+                            'yahoo.com': 'Yahoo Finance',
+                            'bloomberg.com': 'Bloomberg',
+                            'reuters.com': 'Reuters',
+                            'cnbc.com': 'CNBC',
+                            'wsj.com': 'Wall Street Journal',
+                            'marketwatch.com': 'MarketWatch',
+                            'fool.com': 'Motley Fool',
+                            'benzinga.com': 'Benzinga',
+                            'seekingalpha.com': 'Seeking Alpha',
+                            'businesswire.com': 'Business Wire',
+                            'prnewswire.com': 'PR Newswire'
+                        };
+                        if (domainMap[domain]) {
+                            author = domainMap[domain];
+                        } else {
+                            // Format domain nicely
+                            const parts = domain.split('.');
+                            if (parts.length >= 2) {
+                                author = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+                            } else {
+                                author = domain;
+                            }
+                        }
+                    } catch (e) {
+                        // Invalid URL, keep default
+                    }
+                }
                 
                 // Clean HTML from description if present
                 const tempDiv = document.createElement('div');
@@ -456,7 +503,10 @@ class NewsFeed {
                     <h3>${this.escapeHtml(item.title)}</h3>
                     <p>${this.escapeHtml(item.contentSnippet || item.description || '')}</p>
                     <div class="news-meta">
-                        <span>Source: ${this.escapeHtml(item.author || 'Yahoo Finance')}</span>
+                        <span style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: #ef4444; flex-shrink: 0;"></span>
+                            Source: ${this.escapeHtml(item.author || 'Yahoo Finance')}
+                        </span>
                         <span>${pubDate}</span>
                     </div>
                     ${item.link ? `<a href="${item.link}" target="_blank" style="color: var(--primary-color); text-decoration: none; font-size: 0.9rem;">Read more →</a>` : ''}

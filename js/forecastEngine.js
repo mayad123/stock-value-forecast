@@ -174,12 +174,44 @@ class ForecastEngine {
     }
 
     /**
-     * Check if article is relevant to stock (simplified check)
+     * Check if article is relevant to stock
      */
     isRelevantToStock(symbol, article) {
-        // In a real implementation, this would use NLP or check for company names
-        // For now, we'll consider all financial news as potentially relevant
-        return true;
+        // Check if article mentions the stock symbol or company name
+        const text = (article.title + ' ' + (article.contentSnippet || article.description || '') + ' ' + (article.link || '')).toLowerCase();
+        
+        // Common stock symbol patterns (e.g., AAPL, $AAPL, Apple Inc)
+        const symbolPattern = new RegExp(`\\b${symbol.toLowerCase()}\\b|\\$${symbol.toLowerCase()}\\b`);
+        
+        // Company name mapping (common stocks)
+        const companyNames = {
+            'AAPL': ['apple', 'aapl'],
+            'MSFT': ['microsoft', 'msft'],
+            'GOOGL': ['google', 'alphabet', 'googl'],
+            'AMZN': ['amazon', 'amzn'],
+            'NVDA': ['nvidia', 'nvda'],
+            'META': ['facebook', 'meta', 'fb'],
+            'TSLA': ['tesla', 'tsla'],
+            'NFLX': ['netflix', 'nflx'],
+            'AMD': ['advanced micro devices', 'amd'],
+            'INTC': ['intel', 'intc']
+        };
+        
+        if (symbolPattern.test(text)) {
+            return true;
+        }
+        
+        // Check company name
+        if (companyNames[symbol]) {
+            const names = companyNames[symbol];
+            return names.some(name => text.includes(name));
+        }
+        
+        // If it's general market news and mentions stock market terms, consider it relevant
+        const marketTerms = ['stock', 'market', 'trading', 'investor', 'share', 'equity', 'nasdaq', 'nyse', 'dow', 's&p', 'sp500'];
+        const hasMarketTerms = marketTerms.some(term => text.includes(term));
+        
+        return hasMarketTerms;
     }
 
     /**
@@ -274,7 +306,10 @@ class ForecastEngine {
                             <h4>${this.escapeHtml(article.title || 'Untitled')}</h4>
                             <p>${this.escapeHtml(article.contentSnippet || article.description || '')}</p>
                             <div class="article-meta">
-                                <span>Source: ${this.escapeHtml(article.author || 'Unknown')}</span>
+                                <span style="display: inline-flex; align-items: center; gap: 4px;">
+                                    <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: #ef4444; flex-shrink: 0;"></span>
+                                    Source: ${this.escapeHtml(article.author || 'Yahoo Finance')}
+                                </span>
                                 <span>${pubDate}</span>
                             </div>
                             ${article.link && article.link !== '#' ? `<a href="${article.link}" target="_blank" class="article-link">Read more →</a>` : ''}
@@ -752,29 +787,14 @@ class ForecastEngine {
                             if (p.hasArticle) return p.y;
                             return null;
                         }),
-                        backgroundColor: priceData.data.map((p) => {
-                            if (p.hasArticle && p.articles.length > 0) {
-                                const article = p.articles[0];
-                                if (article.sentiment === 'positive') return 'rgb(16, 185, 129)';
-                                if (article.sentiment === 'negative') return 'rgb(239, 68, 68)';
-                                return 'rgb(148, 163, 184)';
-                            }
-                            return 'rgba(0, 0, 0, 0)';
-                        }),
-                        borderColor: priceData.data.map((p) => {
-                            if (p.hasArticle && p.articles.length > 0) {
-                                const article = p.articles[0];
-                                if (article.sentiment === 'positive') return 'rgb(16, 185, 129)';
-                                if (article.sentiment === 'negative') return 'rgb(239, 68, 68)';
-                                return 'rgb(148, 163, 184)';
-                            }
-                            return 'rgba(0, 0, 0, 0)';
-                        }),
-                        pointRadius: priceData.data.map(p => p.hasArticle ? 8 : 0),
-                        pointHoverRadius: priceData.data.map(p => p.hasArticle ? 12 : 0),
-                        pointHoverBackgroundColor: 'rgb(255, 255, 255)',
+                        backgroundColor: 'rgb(239, 68, 68)', // Red color for document icon
+                        borderColor: 'rgb(220, 38, 38)', // Darker red border
+                        pointRadius: priceData.data.map(p => p.hasArticle ? 10 : 0),
+                        pointHoverRadius: priceData.data.map(p => p.hasArticle ? 14 : 0),
+                        pointHoverBackgroundColor: 'rgb(239, 68, 68)',
+                        pointHoverBorderColor: 'rgb(220, 38, 38)',
                         pointHoverBorderWidth: 3,
-                        pointStyle: 'circle',
+                        pointStyle: 'rectRot', // Document/rectangular rotated style (looks like document)
                         showLine: false,
                         order: 0
                     }
