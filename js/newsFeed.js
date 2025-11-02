@@ -247,22 +247,39 @@ class NewsFeed {
      * Fetch news from multiple RSS sources and combine results
      */
     async fetchFromMultipleSources() {
-        // Define multiple actual news sources
+        // Define multiple actual news sources with multiple proxy fallbacks
         const newsSources = [
             {
                 name: 'Yahoo Finance Headlines',
                 url: 'https://feeds.finance.yahoo.com/rss/2.0/headline',
                 proxies: [
                     { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
-                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                    { type: 'corsproxy', url: 'https://corsproxy.io/?url=' },
+                    { type: 'corsanywhere', url: 'https://api.allorigins.win/raw?url=' }
                 ]
             },
             {
-                name: 'Yahoo Finance Market News',
-                url: 'https://finance.yahoo.com/news/rssindex',
+                name: 'Yahoo Finance Markets',
+                url: 'https://feeds.finance.yahoo.com/rss/2.0/topstories',
                 proxies: [
                     { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
-                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                    { type: 'corsproxy', url: 'https://corsproxy.io/?url=' }
+                ]
+            },
+            {
+                name: 'Yahoo Finance Tech',
+                url: 'https://feeds.finance.yahoo.com/rss/2.0/tech',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'corsproxy', url: 'https://corsproxy.io/?url=' }
+                ]
+            },
+            {
+                name: 'MarketWatch Top Stories',
+                url: 'https://feeds.marketwatch.com/marketwatch/topstories',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'corsproxy', url: 'https://corsproxy.io/?url=' }
                 ]
             },
             {
@@ -270,58 +287,92 @@ class NewsFeed {
                 url: 'https://feeds.marketwatch.com/marketwatch/marketpulse',
                 proxies: [
                     { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
-                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                    { type: 'corsproxy', url: 'https://corsproxy.io/?url=' }
                 ]
             },
             {
-                name: 'Reuters Business News',
-                url: 'https://feeds.reuters.com/reuters/businessNews',
-                proxies: [
-                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
-                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
-                ]
-            },
-            {
-                name: 'Reuters Finance',
-                url: 'https://feeds.reuters.com/reuters/finance',
-                proxies: [
-                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
-                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
-                ]
-            },
-            {
-                name: 'CNBC Top Business',
+                name: 'CNBC Business',
                 url: 'https://feeds.nbcnews.com/nbcnews/public/business',
                 proxies: [
                     { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
-                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                    { type: 'corsproxy', url: 'https://corsproxy.io/?url=' }
                 ]
             },
             {
-                name: 'Financial Times US',
-                url: 'https://www.ft.com/?format=rss&segmentId=b8f9a4a1-5136-6c84-a091-6d76d773e8dc',
-                proxies: [
-                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
-                ]
-            },
-            {
-                name: 'Seeking Alpha Market News',
-                url: 'https://seekingalpha.com/market_currents.xml',
+                name: 'Google News Stocks',
+                url: 'https://news.google.com/rss/search?q=stocks&hl=en-US&gl=US&ceid=US:en',
                 proxies: [
                     { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
                 ]
             },
             {
                 name: 'Google News Finance',
-                url: 'https://news.google.com/rss/search?q=finance+stock+market&hl=en-US&gl=US&ceid=US:en',
+                url: 'https://news.google.com/rss/search?q=finance&hl=en-US&gl=US&ceid=US:en',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
+                ]
+            },
+            {
+                name: 'Google News Market',
+                url: 'https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
+                ]
+            },
+            {
+                name: 'CNN Business',
+                url: 'https://www.cnn.com/business',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
+                ]
+            },
+            {
+                name: 'Bloomberg Markets',
+                url: 'https://feeds.bloomberg.com/markets/news.rss',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'corsproxy', url: 'https://corsproxy.io/?url=' }
+                ]
+            },
+            {
+                name: 'Investing.com',
+                url: 'https://www.investing.com/rss/news.rss',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
+                ]
+            },
+            {
+                name: 'Financial Times',
+                url: 'https://www.ft.com/?format=rss',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
+                ]
+            },
+            {
+                name: 'BBC Business',
+                url: 'http://feeds.bbci.co.uk/news/business/rss.xml',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'corsproxy', url: 'https://corsproxy.io/?url=' }
+                ]
+            },
+            {
+                name: 'Wall Street Journal',
+                url: 'https://www.wsj.com/xml/rss/3_7085.xml',
                 proxies: [
                     { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
                 ]
             }
         ];
 
-        // Try to fetch from all sources in parallel
-        const fetchPromises = newsSources.map(source => this.tryFetchFromSource(source));
+        console.log(`Attempting to fetch from ${newsSources.length} news sources...`);
+        
+        // Try to fetch from all sources with staggered delays to avoid rate limits
+        const fetchPromises = newsSources.map((source, index) => 
+            new Promise(resolve => 
+                setTimeout(() => resolve(this.tryFetchFromSource(source)), index * 100)
+            )
+        );
         const results = await Promise.allSettled(fetchPromises);
         
         // Collect all successful results
@@ -358,7 +409,8 @@ class NewsFeed {
                 return dateB - dateA; // Newest first
             });
 
-        console.log(`Fetched ${filteredItems.length} unique articles from ${newsSources.length} sources`);
+        const successCount = results.filter(r => r.status === 'fulfilled' && r.value && r.value.length > 0).length;
+        console.log(`Fetched ${filteredItems.length} unique articles from ${successCount}/${newsSources.length} successful sources`);
         
         return filteredItems;
     }
@@ -373,9 +425,12 @@ class NewsFeed {
                 let fetchUrl;
                 let parseMethod = 'json';
                 
-                if (proxy.type === 'allorigins') {
+                if (proxy.type === 'allorigins' || proxy.type === 'corsanywhere') {
                     fetchUrl = `${proxy.url}${encodeURIComponent(source.url)}`;
                     parseMethod = 'allorigins';
+                } else if (proxy.type === 'corsproxy') {
+                    fetchUrl = `${proxy.url}${encodeURIComponent(source.url)}`;
+                    parseMethod = 'xml';
                 } else if (proxy.type === 'rss2json') {
                     fetchUrl = `${proxy.url}${encodeURIComponent(source.url)}`;
                     parseMethod = 'json';
@@ -383,12 +438,12 @@ class NewsFeed {
                 
                 // Create timeout controller
                 const abortController = new AbortController();
-                const timeoutId = setTimeout(() => abortController.abort(), 8000);
+                const timeoutId = setTimeout(() => abortController.abort(), 10000);
                 
                 const response = await fetch(fetchUrl, {
                     method: 'GET',
                     headers: {
-                        'Accept': 'application/json',
+                        'Accept': parseMethod === 'xml' ? 'application/xml, text/xml, application/rss+xml' : 'application/json',
                     },
                     signal: abortController.signal
                 });
@@ -399,19 +454,35 @@ class NewsFeed {
                     continue; // Try next proxy
                 }
                 
-                // Parse response
+                // Parse response based on method
                 let data;
-                if (parseMethod === 'allorigins') {
-                    const wrapper = await response.json();
-                    if (wrapper.contents) {
-                        const contents = wrapper.contents.trim();
-                        if (contents.startsWith('<?xml') || contents.startsWith('<rss')) {
-                            data = this.parseRSSXML(wrapper.contents);
+                const responseText = await response.text();
+                
+                if (parseMethod === 'allorigins' || parseMethod === 'corsanywhere') {
+                    try {
+                        const wrapper = JSON.parse(responseText);
+                        if (wrapper.contents) {
+                            const contents = wrapper.contents.trim();
+                            if (contents.startsWith('<?xml') || contents.startsWith('<rss')) {
+                                data = this.parseRSSXML(wrapper.contents);
+                            }
                         }
+                    } catch (e) {
+                        continue;
+                    }
+                } else if (parseMethod === 'xml') {
+                    // Direct XML parsing for corsproxy
+                    const trimmed = responseText.trim();
+                    if (trimmed.startsWith('<?xml') || trimmed.startsWith('<rss')) {
+                        data = this.parseRSSXML(responseText);
                     }
                 } else {
-                    data = await response.json();
-                    if (data.error || data.status === 'error') {
+                    try {
+                        data = JSON.parse(responseText);
+                        if (data.error || data.status === 'error') {
+                            continue;
+                        }
+                    } catch (e) {
                         continue;
                     }
                 }
@@ -425,11 +496,11 @@ class NewsFeed {
                 }
                 
                 if (items.length > 0) {
-                    console.log(`Successfully fetched ${items.length} items from ${source.name}`);
+                    console.log(`✓ ${source.name}: ${items.length} articles`);
                     return items;
                 }
             } catch (error) {
-                // Continue to next proxy
+                // Silently continue to next proxy (errors are expected)
                 continue;
             }
         }
