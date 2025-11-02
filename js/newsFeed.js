@@ -107,8 +107,25 @@ class NewsFeed {
             if (response.ok) {
                 const data = await response.json();
                 if (data && data.items && Array.isArray(data.items)) {
-                    this.newsData = data.items.slice(0, 10);
-                    this.displayNews();
+                    // Filter articles from the last year
+                    const oneYearAgo = new Date();
+                    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                    
+                    const filteredItems = data.items
+                        .filter(item => {
+                            if (!item.pubDate) return true;
+                            const pubDate = new Date(item.pubDate);
+                            return pubDate >= oneYearAgo;
+                        })
+                        .sort((a, b) => {
+                            const dateA = new Date(a.pubDate || 0);
+                            const dateB = new Date(b.pubDate || 0);
+                            return dateB - dateA;
+                        });
+                    
+                    // Store all filtered articles (not just 10)
+                    this.newsData = filteredItems;
+                    this.displayNews(filteredItems.slice(0, 10));
                     return true;
                 }
             }
@@ -152,8 +169,24 @@ class NewsFeed {
                 if (response.ok) {
                     const data = await response.json();
                     if (data && data.items) {
-                        this.newsData = data.items.slice(0, 10);
-                        this.displayNews();
+                        // Filter articles from the last year
+                        const oneYearAgo = new Date();
+                        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                        
+                        const filteredItems = data.items
+                            .filter(item => {
+                                if (!item.pubDate) return true;
+                                const pubDate = new Date(item.pubDate);
+                                return pubDate >= oneYearAgo;
+                            })
+                            .sort((a, b) => {
+                                const dateA = new Date(a.pubDate || 0);
+                                const dateB = new Date(b.pubDate || 0);
+                                return dateB - dateA;
+                            });
+                        
+                        this.newsData = filteredItems;
+                        this.displayNews(filteredItems.slice(0, 10));
                         return true;
                     }
                 }
@@ -305,8 +338,27 @@ class NewsFeed {
                 }
                 
                 if (items.length > 0) {
-                    this.newsData = items.slice(0, 10); // Get latest 10 news items
-                    this.displayNews();
+                    // Get more articles and filter by date (last year)
+                    const oneYearAgo = new Date();
+                    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+                    
+                    // Filter articles from the last year and sort by date (newest first)
+                    const filteredItems = items
+                        .filter(item => {
+                            if (!item.pubDate) return true; // Include if no date
+                            const pubDate = new Date(item.pubDate);
+                            return pubDate >= oneYearAgo;
+                        })
+                        .sort((a, b) => {
+                            const dateA = new Date(a.pubDate || 0);
+                            const dateB = new Date(b.pubDate || 0);
+                            return dateB - dateA; // Newest first
+                        });
+                    
+                    // Store all filtered articles (not just 10)
+                    this.newsData = filteredItems;
+                    // Display only the latest 10 in the news feed
+                    this.displayNews(filteredItems.slice(0, 10));
                     return; // Success!
                 }
                 
@@ -483,13 +535,15 @@ class NewsFeed {
     /**
      * Display news items in the UI
      */
-    displayNews() {
-        if (this.newsData.length === 0) {
+    displayNews(itemsToDisplay = null) {
+        const items = itemsToDisplay || this.newsData;
+        
+        if (!items || items.length === 0) {
             this.newsContainer.innerHTML = '<p class="empty-message">No news available at the moment.</p>';
             return;
         }
 
-        const newsHTML = this.newsData.map(item => {
+        const newsHTML = items.map(item => {
             const pubDate = new Date(item.pubDate).toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'short',

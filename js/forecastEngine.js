@@ -215,7 +215,57 @@ class ForecastEngine {
     }
 
     /**
-     * Categorize articles by sentiment for a specific stock
+     * Score article relevance to a stock (higher = more relevant)
+     */
+    scoreArticleRelevance(symbol, article) {
+        const text = (article.title + ' ' + (article.contentSnippet || article.description || '') + ' ' + (article.link || '')).toLowerCase();
+        let score = 0;
+        
+        // Direct symbol match in title (highest relevance)
+        if (article.title && article.title.toLowerCase().includes(symbol.toLowerCase())) {
+            score += 100;
+        }
+        
+        // Symbol pattern match (e.g., AAPL, $AAPL)
+        const symbolPattern = new RegExp(`\\b${symbol.toLowerCase()}\\b|\\$${symbol.toLowerCase()}\\b`);
+        if (symbolPattern.test(text)) {
+            score += 50;
+        }
+        
+        // Company name match
+        const companyNames = {
+            'AAPL': ['apple inc', 'apple'],
+            'MSFT': ['microsoft', 'msft'],
+            'GOOGL': ['google', 'alphabet', 'googl'],
+            'AMZN': ['amazon', 'amzn'],
+            'NVDA': ['nvidia', 'nvda'],
+            'META': ['facebook', 'meta', 'fb'],
+            'TSLA': ['tesla', 'tsla'],
+            'NFLX': ['netflix', 'nflx'],
+            'AMD': ['advanced micro devices', 'amd'],
+            'INTC': ['intel', 'intc']
+        };
+        
+        if (companyNames[symbol]) {
+            companyNames[symbol].forEach(name => {
+                if (text.includes(name)) {
+                    score += 30;
+                }
+            });
+        }
+        
+        // Stock market terms (lower relevance)
+        const marketTerms = ['stock', 'trading', 'investor', 'share', 'equity', 'nasdaq', 'nyse'];
+        const hasMarketTerms = marketTerms.some(term => text.includes(term));
+        if (hasMarketTerms && score === 0) {
+            score += 5;
+        }
+        
+        return score;
+    }
+
+    /**
+     * Categorize articles by sentiment for a specific stock and get top 100 most relevant
      */
     categorizeArticles(symbol, newsData) {
         if (!newsData || newsData.length === 0) {
@@ -229,17 +279,13 @@ class ForecastEngine {
         const positiveKeywords = ['up', 'gain', 'rise', 'surge', 'bullish', 'growth', 'profit', 'strong', 'beat', 'positive', 'win', 'success', 'outperform'];
         const negativeKeywords = ['down', 'fall', 'drop', 'decline', 'bearish', 'loss', 'weak', 'miss', 'negative', 'concern', 'fail', 'plunge', 'crash'];
 
-        const categorized = {
-            positive: [],
-            negative: [],
-            neutral: []
-        };
-
+        // Score and filter relevant articles
+        const scoredArticles = [];
         newsData.forEach(article => {
-            const text = (article.title + ' ' + (article.contentSnippet || article.description || '')).toLowerCase();
-            
-            // Check if article mentions the stock symbol or is relevant
-            if (text.includes(symbol.toLowerCase()) || this.isRelevantToStock(symbol, article)) {
+            const relevanceScore = this.scoreArticleRelevance(symbol, article);
+            if (relevanceScore > 0) { // Only include relevant articles
+                const text = (article.title + ' ' + (article.contentSnippet || article.description || '')).toLowerCase();
+                
                 let positiveCount = 0;
                 let negativeCount = 0;
 
@@ -251,29 +297,48 @@ class ForecastEngine {
                     if (text.includes(keyword)) negativeCount++;
                 });
 
-                // Categorize based on keyword count
-                if (positiveCount > negativeCount && positiveCount > 0) {
-                    categorized.positive.push({
-                        ...article,
-                        sentiment: 'positive',
-                        positiveScore: positiveCount,
-                        negativeScore: negativeCount
-                    });
-                } else if (negativeCount > positiveCount && negativeCount > 0) {
-                    categorized.negative.push({
-                        ...article,
-                        sentiment: 'negative',
-                        positiveScore: positiveCount,
-                        negativeScore: negativeCount
-                    });
-                } else {
-                    categorized.neutral.push({
-                        ...article,
-                        sentiment: 'neutral',
-                        positiveScore: positiveCount,
-                        negativeScore: negativeCount
-                    });
-                }
+                scoredArticles.push({
+                    ...article,
+                    relevanceScore,
+                    positiveCount,
+                    negativeCount
+                });
+            }
+        });
+
+        // Sort by relevance (highest first) and take top 100
+        scoredArticles.sort((a, b) => b.relevanceScore - a.relevanceScore);
+        const topArticles = scoredArticles.slice(0, 100);
+
+        const categorized = {
+            positive: [],
+            negative: [],
+            neutral: []
+        };
+
+        topArticles.forEach(article => {
+            // Categorize based on keyword count
+            if (article.positiveCount > article.negativeCount && article.positiveCount > 0) {
+                categorized.positive.push({
+                    ...article,
+                    sentiment: 'positive',
+                    positiveScore: article.positiveCount,
+                    negativeScore: article.negativeCount
+                });
+            } else if (article.negativeCount > article.positiveCount && article.negativeCount > 0) {
+                categorized.negative.push({
+                    ...article,
+                    sentiment: 'negative',
+                    positiveScore: article.positiveCount,
+                    negativeScore: article.negativeCount
+                });
+            } else {
+                categorized.neutral.push({
+                    ...article,
+                    sentiment: 'neutral',
+                    positiveScore: article.positiveCount,
+                    negativeScore: article.negativeCount
+                });
             }
         });
 
@@ -635,72 +700,185 @@ class ForecastEngine {
             } else {
                 console.error(`Chart button not found for ${symbol}`);
             }
-            // Initialize chart when tab is opened
+            // Initialize chart when chart tab is opened
             if (chartPanel) {
                 // Small delay to ensure panel is visible before chart renders
                 setTimeout(() => {
                     this.initializeChart(symbol);
-                }, 50);
+                }, 100);
             }
         }
     }
 
     /**
-     * Generate simulated price data for the last 30 days
+     * Fetch real stock price data from Yahoo Finance
      */
-    generatePriceData(symbol, articles) {
-        // Generate 30 days of price data
-        const days = 30;
-        const data = [];
-        const labels = [];
-        const today = new Date();
-        
-        // Base price varies by symbol (simulated)
-        const basePrices = {
-            'AAPL': 180, 'MSFT': 380, 'GOOGL': 140, 'AMZN': 150, 'NVDA': 500,
-            'META': 320, 'TSLA': 250, 'NFLX': 450, 'AMD': 120, 'INTC': 40
-        };
-        
-        let basePrice = basePrices[symbol] || 100 + Math.random() * 200;
-        const baseDate = new Date(today);
-        baseDate.setDate(baseDate.getDate() - days);
-
-        // Create article dates map
-        const articleDates = {};
-        articles.forEach(article => {
-            if (article.pubDate) {
-                const date = new Date(article.pubDate);
-                const dateKey = date.toISOString().split('T')[0];
-                if (!articleDates[dateKey]) {
-                    articleDates[dateKey] = [];
+    async fetchStockPriceData(symbol, period = '1mo') {
+        try {
+            // Yahoo Finance API endpoint for historical prices
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=${period}`;
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
                 }
-                articleDates[dateKey].push({
-                    title: article.title || 'Article',
-                    sentiment: article.sentiment || 'neutral',
-                    link: article.link || '#'
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.chart && result.chart.result && result.chart.result[0]) {
+                const chartData = result.chart.result[0];
+                const timestamps = chartData.timestamp || [];
+                const prices = chartData.indicators?.quote?.[0]?.close || [];
+                const volumes = chartData.indicators?.quote?.[0]?.volume || [];
+                
+                return {
+                    timestamps,
+                    prices,
+                    volumes,
+                    success: true
+                };
+            }
+            
+            return { success: false, error: 'No data found' };
+        } catch (error) {
+            console.error(`Error fetching stock data for ${symbol}:`, error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Generate price data using real stock prices for the last 30 days
+     */
+    async generatePriceData(symbol, articles) {
+        // Fetch real stock price data (1 month)
+        const stockData = await this.fetchStockPriceData(symbol, '1mo');
+        
+        let data = [];
+        let labels = [];
+        let basePrice = 100;
+        
+        if (stockData.success && stockData.prices && stockData.prices.length > 0) {
+            // Use real price data
+            const prices = stockData.prices;
+            const timestamps = stockData.timestamps;
+            
+            // Filter out null/undefined prices and get last 30 days
+            const validData = [];
+            for (let i = 0; i < prices.length; i++) {
+                if (prices[i] !== null && prices[i] !== undefined && timestamps[i]) {
+                    validData.push({
+                        timestamp: timestamps[i] * 1000, // Convert to milliseconds
+                        price: prices[i]
+                    });
+                }
+            }
+            
+            // Take last 30 days or all available if less than 30
+            const recentData = validData.slice(-30);
+            
+            if (recentData.length > 0) {
+                basePrice = recentData[0].price;
+                
+                // Create article dates map
+                const articleDates = {};
+                articles.forEach(article => {
+                    if (article.pubDate) {
+                        const date = new Date(article.pubDate);
+                        const dateKey = date.toISOString().split('T')[0];
+                        if (!articleDates[dateKey]) {
+                            articleDates[dateKey] = [];
+                        }
+                        articleDates[dateKey].push({
+                            title: article.title || 'Article',
+                            sentiment: article.sentiment || 'neutral',
+                            link: article.link || '#'
+                        });
+                    }
+                });
+                
+                // Generate data points
+                recentData.forEach((point, index) => {
+                    const date = new Date(point.timestamp);
+                    const dateKey = date.toISOString().split('T')[0];
+                    
+                    labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                    data.push({
+                        x: index,
+                        y: parseFloat(point.price.toFixed(2)),
+                        date: dateKey,
+                        hasArticle: !!articleDates[dateKey],
+                        articles: articleDates[dateKey] || []
+                    });
                 });
             }
-        });
-
-        // Generate price data
-        let currentPrice = basePrice;
-        for (let i = 0; i < days; i++) {
-            const date = new Date(baseDate);
-            date.setDate(date.getDate() + i);
-            const dateKey = date.toISOString().split('T')[0];
+        }
+        
+        // Fallback: If API fails or no data, use current price and generate recent trend
+        if (data.length === 0) {
+            try {
+                // Try to get current price
+                const currentPriceUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+                const currentResponse = await fetch(currentPriceUrl);
+                
+                if (currentResponse.ok) {
+                    const currentData = await currentResponse.json();
+                    if (currentData.quoteResponse && currentData.quoteResponse.result && currentData.quoteResponse.result[0]) {
+                        basePrice = currentData.quoteResponse.result[0].regularMarketPrice || basePrice;
+                    }
+                }
+            } catch (e) {
+                console.error('Error fetching current price:', e);
+            }
             
-            // Random walk with slight upward trend
-            const change = (Math.random() - 0.45) * 5; // Slight upward bias
-            currentPrice = Math.max(basePrice * 0.7, Math.min(basePrice * 1.3, currentPrice + change));
+            // Generate last 30 days with slight variation around current price
+            const days = 30;
+            const today = new Date();
+            const baseDate = new Date(today);
+            baseDate.setDate(baseDate.getDate() - days);
             
-            labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-            data.push({
-                x: i,
-                y: parseFloat(currentPrice.toFixed(2)),
-                date: dateKey,
-                hasArticle: !!articleDates[dateKey],
-                articles: articleDates[dateKey] || []
+            // Create article dates map
+            const articleDates = {};
+            articles.forEach(article => {
+                if (article.pubDate) {
+                    const date = new Date(article.pubDate);
+                    const dateKey = date.toISOString().split('T')[0];
+                    if (!articleDates[dateKey]) {
+                        articleDates[dateKey] = [];
+                    }
+                    articleDates[dateKey].push({
+                        title: article.title || 'Article',
+                        sentiment: article.sentiment || 'neutral',
+                        link: article.link || '#'
+                    });
+                }
             });
+            
+            // Generate price data with small random variation
+            let currentPrice = basePrice;
+            for (let i = 0; i < days; i++) {
+                const date = new Date(baseDate);
+                date.setDate(date.getDate() + i);
+                const dateKey = date.toISOString().split('T')[0];
+                
+                // Small random variation (±2%)
+                const change = (Math.random() - 0.5) * basePrice * 0.04;
+                currentPrice = basePrice + change;
+                
+                labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                data.push({
+                    x: i,
+                    y: parseFloat(currentPrice.toFixed(2)),
+                    date: dateKey,
+                    hasArticle: !!articleDates[dateKey],
+                    articles: articleDates[dateKey] || []
+                });
+            }
         }
 
         return { labels, data, basePrice };
@@ -709,7 +887,7 @@ class ForecastEngine {
     /**
      * Initialize chart with price data and article markers
      */
-    initializeChart(symbol) {
+    async initializeChart(symbol) {
         const canvasId = `chart-canvas-${symbol}`;
         const canvas = document.getElementById(canvasId);
         
@@ -718,24 +896,70 @@ class ForecastEngine {
             return;
         }
 
-        // Get news data
+        // Destroy existing chart if it exists
+        if (this.charts && this.charts[symbol]) {
+            this.charts[symbol].destroy();
+        }
+
+        // Get news data - filter for articles from last year
         const newsData = this.newsFeed ? this.newsFeed.getNewsData() || [] : [];
-        const categorizedArticles = this.categorizeArticles(symbol, newsData);
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
         
-        // Combine all articles
+        // Filter articles from the last year
+        const lastYearNews = newsData.filter(article => {
+            if (!article.pubDate) return true;
+            const pubDate = new Date(article.pubDate);
+            return pubDate >= oneYearAgo;
+        });
+        
+        const categorizedArticles = this.categorizeArticles(symbol, lastYearNews);
+        
+        // Combine all articles (top 100 most relevant)
         const allArticles = [
             ...categorizedArticles.positive,
             ...categorizedArticles.negative,
             ...categorizedArticles.neutral
         ];
 
-        // Generate price data
-        const priceData = this.generatePriceData(symbol, allArticles);
-
-        // Destroy existing chart if it exists
-        if (this.charts && this.charts[symbol]) {
-            this.charts[symbol].destroy();
+        // Generate price data (async - needs await)
+        // Show loading message
+        const chartContainer = canvas.parentElement;
+        if (chartContainer) {
+            chartContainer.innerHTML = '<p style="text-align: center; padding: 2rem;">Loading price data...</p>';
         }
+        
+        try {
+            const priceData = await this.generatePriceData(symbol, allArticles);
+            
+            // Recreate canvas after loading
+            if (chartContainer) {
+                chartContainer.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+                const newCanvas = document.getElementById(canvasId);
+                if (!newCanvas) {
+                    console.error(`Chart canvas not found after recreation: ${canvasId}`);
+                    return;
+                }
+                this.renderChart(newCanvas, symbol, priceData, categorizedArticles);
+            }
+        } catch (error) {
+            console.error(`Error generating price data for ${symbol}:`, error);
+            if (chartContainer) {
+                chartContainer.innerHTML = '<p style="text-align: center; padding: 2rem; color: red;">Error loading price data. Please try again.</p>';
+            }
+        }
+    }
+
+    /**
+     * Render chart with price data
+     */
+    renderChart(canvas, symbol, priceData, categorizedArticles) {
+        // Combine all articles for markers
+        const allArticles = [
+            ...categorizedArticles.positive,
+            ...categorizedArticles.negative,
+            ...categorizedArticles.neutral
+        ];
 
         if (!this.charts) {
             this.charts = {};
