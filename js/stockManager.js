@@ -13,6 +13,16 @@ class StockManager {
         this.currentSuggestions = [];
         this.selectedSuggestionIndex = -1;
         
+        // Check if elements exist
+        if (!this.stockInput || !this.addStockBtn || !this.selectedStocksContainer || !this.autocompleteDropdown) {
+            console.error('StockManager: Required DOM elements not found', {
+                stockInput: !!this.stockInput,
+                addStockBtn: !!this.addStockBtn,
+                selectedStocksContainer: !!this.selectedStocksContainer,
+                autocompleteDropdown: !!this.autocompleteDropdown
+            });
+        }
+        
         // Popular stock symbols database
         this.stockDatabase = [
             'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B', 'V', 'JNJ',
@@ -34,22 +44,43 @@ class StockManager {
      * Initialize event listeners
      */
     initializeEventListeners() {
+        if (!this.stockInput || !this.addStockBtn) {
+            console.error('StockManager: Cannot initialize event listeners - elements missing');
+            return;
+        }
+        
         // Add stock on button click
-        this.addStockBtn.addEventListener('click', () => this.addStock());
+        this.addStockBtn.addEventListener('click', () => {
+            try {
+                this.addStock();
+            } catch (error) {
+                console.error('Error adding stock:', error);
+            }
+        });
         
         // Handle input for autocomplete
         this.stockInput.addEventListener('input', (e) => {
-            this.handleInput(e.target.value);
+            try {
+                this.handleInput(e.target.value);
+            } catch (error) {
+                console.error('Error handling input:', error);
+            }
         });
 
         // Handle keyboard navigation in autocomplete
         this.stockInput.addEventListener('keydown', (e) => {
-            this.handleKeydown(e);
+            try {
+                this.handleKeydown(e);
+            } catch (error) {
+                console.error('Error handling keydown:', error);
+            }
         });
 
         // Hide dropdown when clicking outside
         document.addEventListener('click', (e) => {
-            const isInputClick = e.target === this.stockInput || this.stockInput.contains(e.target);
+            if (!this.autocompleteDropdown) return;
+            
+            const isInputClick = e.target === this.stockInput || (this.stockInput && this.stockInput.contains(e.target));
             const isDropdownClick = this.autocompleteDropdown && 
                                    (this.autocompleteDropdown.contains(e.target) || 
                                     e.target.closest('.autocomplete-dropdown'));
@@ -98,6 +129,8 @@ class StockManager {
      * Show autocomplete suggestions
      */
     showSuggestions(suggestions, query) {
+        if (!this.autocompleteDropdown) return;
+        
         const suggestionsHTML = suggestions.map((symbol, index) => {
             const highlightedSymbol = this.highlightMatch(symbol, query);
             return `
@@ -138,7 +171,9 @@ class StockManager {
      * Hide autocomplete dropdown
      */
     hideDropdown() {
-        this.autocompleteDropdown.style.display = 'none';
+        if (this.autocompleteDropdown) {
+            this.autocompleteDropdown.style.display = 'none';
+        }
         this.currentSuggestions = [];
         this.selectedSuggestionIndex = -1;
     }
@@ -147,7 +182,9 @@ class StockManager {
      * Handle keyboard navigation
      */
     handleKeydown(e) {
-        if (!this.autocompleteDropdown.style.display || this.autocompleteDropdown.style.display === 'none') {
+        if (!this.autocompleteDropdown || 
+            !this.autocompleteDropdown.style.display || 
+            this.autocompleteDropdown.style.display === 'none') {
             if (e.key === 'Enter') {
                 this.addStock();
             }
@@ -252,8 +289,8 @@ class StockManager {
      * Validate stock symbol format
      */
     isValidSymbol(symbol) {
-        // Stock symbols are typically 1-5 uppercase letters
-        return /^[A-Z]{1,5}$/.test(symbol);
+        // Stock symbols are typically 1-5 uppercase letters, can include dots (e.g., BRK.B)
+        return /^[A-Z]{1,5}(\.[A-Z])?$/.test(symbol);
     }
 
     /**

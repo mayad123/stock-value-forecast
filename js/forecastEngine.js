@@ -10,16 +10,44 @@ class ForecastEngine {
         this.forecastResults = document.getElementById('forecast-results');
         this.generateBtn = document.getElementById('generate-forecast-btn');
         
-        this.generateBtn.addEventListener('click', () => this.generateForecast());
+        if (!this.forecastResults || !this.generateBtn) {
+            console.error('ForecastEngine: Required DOM elements not found', {
+                forecastResults: !!this.forecastResults,
+                generateBtn: !!this.generateBtn
+            });
+            return;
+        }
+        
+        if (this.generateBtn) {
+            this.generateBtn.addEventListener('click', () => {
+                try {
+                    this.generateForecast();
+                } catch (error) {
+                    console.error('Error generating forecast:', error);
+                    this.showError('Failed to generate forecast. Please check the console for details.');
+                }
+            });
+        }
     }
 
     /**
      * Generate all forecast types for selected stocks
      */
     async generateForecast() {
+        if (!this.stockManager) {
+            console.error('ForecastEngine: stockManager not initialized');
+            this.showError('Stock manager not initialized. Please refresh the page.');
+            return;
+        }
+        
+        if (!this.generateBtn) {
+            console.error('ForecastEngine: generateBtn not found');
+            return;
+        }
+        
         const selectedStocks = this.stockManager.getSelectedStocks();
         
-        if (selectedStocks.length === 0) {
+        if (!selectedStocks || selectedStocks.length === 0) {
             this.showError('Please select at least one stock to generate forecast.');
             return;
         }
@@ -30,20 +58,42 @@ class ForecastEngine {
         
         try {
             // Get news data
-            const newsData = this.newsFeed.getNewsData();
+            if (!this.newsFeed) {
+                console.error('ForecastEngine: newsFeed not initialized');
+                throw new Error('News feed not initialized');
+            }
+            
+            const newsData = this.newsFeed.getNewsData() || [];
             
             // Generate all forecast types for each stock
             const stockForecasts = await Promise.all(
-                selectedStocks.map(symbol => this.generateAllForecastsForStock(symbol, newsData))
+                selectedStocks.map(symbol => {
+                    try {
+                        return this.generateAllForecastsForStock(symbol, newsData);
+                    } catch (error) {
+                        console.error(`Error generating forecast for ${symbol}:`, error);
+                        return null;
+                    }
+                })
             );
             
-            this.displayForecasts(stockForecasts);
+            // Filter out null results
+            const validForecasts = stockForecasts.filter(f => f !== null);
+            
+            if (validForecasts.length === 0) {
+                this.showError('Failed to generate forecasts for any stocks. Please try again.');
+                return;
+            }
+            
+            this.displayForecasts(validForecasts);
         } catch (error) {
             console.error('Error generating forecast:', error);
             this.showError('Failed to generate forecast. Please try again.');
         } finally {
-            this.generateBtn.disabled = false;
-            this.generateBtn.textContent = 'Generate Forecast';
+            if (this.generateBtn) {
+                this.generateBtn.disabled = false;
+                this.generateBtn.textContent = 'Generate Forecast';
+            }
         }
     }
 
@@ -51,20 +101,29 @@ class ForecastEngine {
      * Generate all forecast types for a single stock
      */
     async generateAllForecastsForStock(symbol, newsData) {
-        // Analyze sentiment from news
-        const sentiment = this.analyzeSentiment(symbol, newsData);
+        if (!symbol) {
+            throw new Error('Symbol is required');
+        }
         
-        // Generate all forecast types
-        return {
-            symbol,
-            sentiment,
-            forecasts: [
-                this.generateSentimentForecast(symbol, sentiment),
-                this.generateTrendForecast(symbol, sentiment),
-                this.generateVolatilityForecast(symbol, sentiment),
-                this.generatePriceForecast(symbol, sentiment)
-            ]
-        };
+        try {
+            // Analyze sentiment from news
+            const sentiment = this.analyzeSentiment(symbol, newsData || []);
+            
+            // Generate all forecast types
+            return {
+                symbol: symbol.toUpperCase(),
+                sentiment,
+                forecasts: [
+                    this.generateSentimentForecast(symbol, sentiment),
+                    this.generateTrendForecast(symbol, sentiment),
+                    this.generateVolatilityForecast(symbol, sentiment),
+                    this.generatePriceForecast(symbol, sentiment)
+                ]
+            };
+        } catch (error) {
+            console.error(`Error in generateAllForecastsForStock for ${symbol}:`, error);
+            throw error;
+        }
     }
 
     /**
@@ -214,14 +273,34 @@ class ForecastEngine {
      * Display forecasts in the UI grouped by stock
      */
     displayForecasts(stockForecasts) {
-        if (stockForecasts.length === 0) {
+        if (!this.forecastResults) {
+            console.error('ForecastEngine: forecastResults element not found');
+            return;
+        }
+        
+        if (!stockForecasts || stockForecasts.length === 0) {
             this.showError('No forecasts generated.');
             return;
         }
 
-        const forecastsHTML = stockForecasts.map(stockData => {
+        // Filter out invalid stockData entries before mapping
+        const validStockForecasts = stockForecasts.filter(stockData => 
+            stockData && stockData.forecasts && Array.isArray(stockData.forecasts) && stockData.forecasts.length > 0
+        );
+
+        if (validStockForecasts.length === 0) {
+            this.showError('No valid forecasts generated.');
+            return;
+        }
+
+        const forecastsHTML = validStockForecasts.map(stockData => {
             // Generate HTML for all forecast types for this stock
             const forecastCardsHTML = stockData.forecasts.map(forecast => {
+                if (!forecast || !forecast.metrics || !Array.isArray(forecast.metrics)) {
+                    console.error('Invalid forecast structure:', forecast);
+                    return '';
+                }
+                
                 const metricsHTML = forecast.metrics.map(metric => `
                     <div class="metric">
                         <div class="metric-label">${metric.label}</div>
@@ -232,16 +311,16 @@ class ForecastEngine {
                 return `
                     <div class="forecast-card">
                         <h3>
-                            <span class="stock-symbol">${forecast.symbol}</span>
-                            ${forecast.type}
+                            <span class="stock-symbol">${forecast.symbol || stockData.symbol}</span>
+                            ${forecast.type || 'Forecast'}
                         </h3>
-                        <p>${forecast.description}</p>
+                        <p>${forecast.description || ''}</p>
                         <div class="forecast-metrics">
                             ${metricsHTML}
                         </div>
                     </div>
                 `;
-            }).join('');
+            }).filter(html => html.trim().length > 0).join('');
 
             // Wrap all forecasts for a stock in a container
             return `
@@ -255,7 +334,7 @@ class ForecastEngine {
                     </div>
                 </div>
             `;
-        }).join('');
+        }).filter(html => html.trim().length > 0).join('');
 
         this.forecastResults.innerHTML = forecastsHTML;
     }
