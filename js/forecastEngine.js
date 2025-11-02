@@ -490,7 +490,9 @@ class ForecastEngine {
                                 </div>
                             </div>
                             <div id="articles-${stockData.symbol}" class="tab-panel">
-                                ${articlesHTML}
+                                <div class="articles-panel-content">
+                                    ${articlesHTML}
+                                </div>
                             </div>
                             <div id="chart-${stockData.symbol}" class="tab-panel">
                                 <div class="chart-container">
@@ -529,12 +531,26 @@ class ForecastEngine {
      * Switch between tabs
      */
     switchTab(symbol, tabType) {
+        console.log(`Switching tab for ${symbol} to ${tabType}`);
+
+        // Find panels by ID
         const summaryPanel = document.getElementById(`summary-${symbol}`);
         const articlesPanel = document.getElementById(`articles-${symbol}`);
         const chartPanel = document.getElementById(`chart-${symbol}`);
-        const summaryBtn = document.querySelector(`button[data-tab="summary-${symbol}"]`);
-        const articlesBtn = document.querySelector(`button[data-tab="articles-${symbol}"]`);
-        const chartBtn = document.querySelector(`button[data-tab="chart-${symbol}"]`);
+        
+        // Find buttons by data attributes
+        const summaryBtn = document.querySelector(`button[data-tab="summary"][data-symbol="${symbol}"]`);
+        const articlesBtn = document.querySelector(`button[data-tab="articles"][data-symbol="${symbol}"]`);
+        const chartBtn = document.querySelector(`button[data-tab="chart"][data-symbol="${symbol}"]`);
+
+        console.log('Found elements:', {
+            summaryPanel: !!summaryPanel,
+            articlesPanel: !!articlesPanel,
+            chartPanel: !!chartPanel,
+            summaryBtn: !!summaryBtn,
+            articlesBtn: !!articlesBtn,
+            chartBtn: !!chartBtn
+        });
 
         // Remove active class from all panels and buttons
         [summaryPanel, articlesPanel, chartPanel].forEach(panel => {
@@ -544,21 +560,42 @@ class ForecastEngine {
             if (btn) btn.classList.remove('active');
         });
 
+        // Add active class to selected tab
         if (tabType === 'summary') {
-            if (summaryPanel && summaryBtn) {
+            if (summaryPanel) {
                 summaryPanel.classList.add('active');
+            } else {
+                console.error(`Summary panel not found for ${symbol}`);
+            }
+            if (summaryBtn) {
                 summaryBtn.classList.add('active');
+            } else {
+                console.error(`Summary button not found for ${symbol}`);
             }
         } else if (tabType === 'articles') {
-            if (articlesPanel && articlesBtn) {
+            if (articlesPanel) {
                 articlesPanel.classList.add('active');
+            } else {
+                console.error(`Articles panel not found for ${symbol}`);
+            }
+            if (articlesBtn) {
                 articlesBtn.classList.add('active');
+            } else {
+                console.error(`Articles button not found for ${symbol}`);
             }
         } else if (tabType === 'chart') {
-            if (chartPanel && chartBtn) {
+            if (chartPanel) {
                 chartPanel.classList.add('active');
+            } else {
+                console.error(`Chart panel not found for ${symbol}`);
+            }
+            if (chartBtn) {
                 chartBtn.classList.add('active');
-                // Initialize chart when tab is opened
+            } else {
+                console.error(`Chart button not found for ${symbol}`);
+            }
+            // Initialize chart when tab is opened
+            if (chartPanel) {
                 this.initializeChart(symbol);
             }
         }
