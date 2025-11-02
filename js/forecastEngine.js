@@ -785,20 +785,54 @@ class ForecastEngine {
             if (recentData.length > 0) {
                 basePrice = recentData[0].price;
                 
-                // Create article dates map
-                const articleDates = {};
+                // Create article dates map - map articles to nearest trading day
+                const articleDates = new Map();
+                const tradingDates = recentData.map(point => {
+                    const date = new Date(point.timestamp);
+                    return date.toISOString().split('T')[0];
+                });
+                
                 articles.forEach(article => {
                     if (article.pubDate) {
-                        const date = new Date(article.pubDate);
-                        const dateKey = date.toISOString().split('T')[0];
-                        if (!articleDates[dateKey]) {
-                            articleDates[dateKey] = [];
+                        const articleDate = new Date(article.pubDate);
+                        const articleDateKey = articleDate.toISOString().split('T')[0];
+                        
+                        // Try exact match first
+                        if (tradingDates.includes(articleDateKey)) {
+                            if (!articleDates.has(articleDateKey)) {
+                                articleDates.set(articleDateKey, []);
+                            }
+                            articleDates.get(articleDateKey).push({
+                                title: article.title || 'Article',
+                                sentiment: article.sentiment || 'neutral',
+                                link: article.link || '#'
+                            });
+                        } else {
+                            // Find nearest trading day (within 3 days before or after)
+                            let nearestDate = null;
+                            let minDiff = Infinity;
+                            
+                            tradingDates.forEach(tradingDate => {
+                                const tradingDateObj = new Date(tradingDate);
+                                const diff = Math.abs(articleDate - tradingDateObj);
+                                // Within 3 days
+                                if (diff < 3 * 24 * 60 * 60 * 1000 && diff < minDiff) {
+                                    minDiff = diff;
+                                    nearestDate = tradingDate;
+                                }
+                            });
+                            
+                            if (nearestDate) {
+                                if (!articleDates.has(nearestDate)) {
+                                    articleDates.set(nearestDate, []);
+                                }
+                                articleDates.get(nearestDate).push({
+                                    title: article.title || 'Article',
+                                    sentiment: article.sentiment || 'neutral',
+                                    link: article.link || '#'
+                                });
+                            }
                         }
-                        articleDates[dateKey].push({
-                            title: article.title || 'Article',
-                            sentiment: article.sentiment || 'neutral',
-                            link: article.link || '#'
-                        });
                     }
                 });
                 
@@ -808,14 +842,22 @@ class ForecastEngine {
                     const dateKey = date.toISOString().split('T')[0];
                     
                     labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                    const articlesForDate = articleDates.get(dateKey) || [];
                     data.push({
                         x: index,
                         y: parseFloat(point.price.toFixed(2)),
                         date: dateKey,
-                        hasArticle: !!articleDates[dateKey],
-                        articles: articleDates[dateKey] || []
+                        hasArticle: articlesForDate.length > 0,
+                        articles: articlesForDate
                     });
                 });
+                
+                // Debug: Log article matches
+                const articleCount = Array.from(articleDates.values()).reduce((sum, arr) => sum + arr.length, 0);
+                const datesWithArticles = data.filter(d => d.hasArticle).length;
+                if (articleCount > 0) {
+                    console.log(`${symbol}: Found ${articleCount} articles, matched to ${datesWithArticles} trading days`);
+                }
             }
         }
         
@@ -842,20 +884,59 @@ class ForecastEngine {
             const baseDate = new Date(today);
             baseDate.setDate(baseDate.getDate() - days);
             
-            // Create article dates map
-            const articleDates = {};
+            // Create article dates map - match articles to generated dates
+            const articleDates = new Map();
+            const generatedDates = [];
+            
+            // First, collect all generated dates
+            for (let i = 0; i < days; i++) {
+                const date = new Date(baseDate);
+                date.setDate(date.getDate() + i);
+                const dateKey = date.toISOString().split('T')[0];
+                generatedDates.push(dateKey);
+            }
+            
+            // Map articles to nearest date
             articles.forEach(article => {
                 if (article.pubDate) {
-                    const date = new Date(article.pubDate);
-                    const dateKey = date.toISOString().split('T')[0];
-                    if (!articleDates[dateKey]) {
-                        articleDates[dateKey] = [];
+                    const articleDate = new Date(article.pubDate);
+                    const articleDateKey = articleDate.toISOString().split('T')[0];
+                    
+                    // Try exact match first
+                    if (generatedDates.includes(articleDateKey)) {
+                        if (!articleDates.has(articleDateKey)) {
+                            articleDates.set(articleDateKey, []);
+                        }
+                        articleDates.get(articleDateKey).push({
+                            title: article.title || 'Article',
+                            sentiment: article.sentiment || 'neutral',
+                            link: article.link || '#'
+                        });
+                    } else {
+                        // Find nearest date (within 3 days)
+                        let nearestDate = null;
+                        let minDiff = Infinity;
+                        
+                        generatedDates.forEach(genDate => {
+                            const genDateObj = new Date(genDate);
+                            const diff = Math.abs(articleDate - genDateObj);
+                            if (diff < 3 * 24 * 60 * 60 * 1000 && diff < minDiff) {
+                                minDiff = diff;
+                                nearestDate = genDate;
+                            }
+                        });
+                        
+                        if (nearestDate) {
+                            if (!articleDates.has(nearestDate)) {
+                                articleDates.set(nearestDate, []);
+                            }
+                            articleDates.get(nearestDate).push({
+                                title: article.title || 'Article',
+                                sentiment: article.sentiment || 'neutral',
+                                link: article.link || '#'
+                            });
+                        }
                     }
-                    articleDates[dateKey].push({
-                        title: article.title || 'Article',
-                        sentiment: article.sentiment || 'neutral',
-                        link: article.link || '#'
-                    });
                 }
             });
             
@@ -870,13 +951,14 @@ class ForecastEngine {
                 const change = (Math.random() - 0.5) * basePrice * 0.04;
                 currentPrice = basePrice + change;
                 
+                const articlesForDate = articleDates.get(dateKey) || [];
                 labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
                 data.push({
                     x: i,
                     y: parseFloat(currentPrice.toFixed(2)),
                     date: dateKey,
-                    hasArticle: !!articleDates[dateKey],
-                    articles: articleDates[dateKey] || []
+                    hasArticle: articlesForDate.length > 0,
+                    articles: articlesForDate
                 });
             }
         }
@@ -921,6 +1003,9 @@ class ForecastEngine {
             ...categorizedArticles.negative,
             ...categorizedArticles.neutral
         ];
+        
+        // Debug: Log articles being passed to chart
+        console.log(`${symbol}: Using ${allArticles.length} relevant articles for chart (from ${lastYearNews.length} total articles in last year)`);
 
         // Generate price data (async - needs await)
         // Show loading message
@@ -968,24 +1053,12 @@ class ForecastEngine {
         // Create chart configuration with article markers
         const ctx = canvas.getContext('2d');
         
-        // Create article markers dataset - null for no article, value for article
-        const articleMarkers = priceData.data.map((point, index) => {
-            if (point.hasArticle && point.articles.length > 0) {
-                const article = point.articles[0];
-                return {
-                    x: index,
-                    y: point.y,
-                    article: article
-                };
-            }
-            return null;
-        });
-
-        // Store article info for tooltip and click handlers
+        // Store article info for tooltip and click handlers - map by data index
         const articleInfoMap = new Map();
-        articleMarkers.forEach((marker, index) => {
-            if (marker) {
-                articleInfoMap.set(index, marker.article);
+        priceData.data.forEach((point, index) => {
+            if (point.hasArticle && point.articles && point.articles.length > 0) {
+                // Store all articles for this date point
+                articleInfoMap.set(index, point.articles[0]); // Use first article for tooltip
             }
         });
 
@@ -1008,19 +1081,29 @@ class ForecastEngine {
                     {
                         label: 'Article Publication',
                         data: priceData.data.map((p, index) => {
-                            if (p.hasArticle) return p.y;
-                            return null;
+                            // Always return a data point, but use NaN if no article (Chart.js will skip it)
+                            if (p.hasArticle && p.articles && p.articles.length > 0) {
+                                return p.y; // Return the y value (price) at this index
+                            }
+                            return NaN; // Use NaN instead of null - Chart.js will skip these points
                         }),
                         backgroundColor: 'rgb(239, 68, 68)', // Red color for document icon
                         borderColor: 'rgb(220, 38, 38)', // Darker red border
-                        pointRadius: priceData.data.map(p => p.hasArticle ? 10 : 0),
-                        pointHoverRadius: priceData.data.map(p => p.hasArticle ? 14 : 0),
+                        pointRadius: priceData.data.map((p, idx) => {
+                            if (p.hasArticle && p.articles && p.articles.length > 0) return 12;
+                            return 0;
+                        }),
+                        pointHoverRadius: priceData.data.map((p, idx) => {
+                            if (p.hasArticle && p.articles && p.articles.length > 0) return 16;
+                            return 0;
+                        }),
                         pointHoverBackgroundColor: 'rgb(239, 68, 68)',
                         pointHoverBorderColor: 'rgb(220, 38, 38)',
-                        pointHoverBorderWidth: 3,
+                        pointHoverBorderWidth: 4,
                         pointStyle: 'rectRot', // Document/rectangular rotated style (looks like document)
                         showLine: false,
-                        order: 0
+                        order: 0,
+                        tension: 0
                     }
                 ]
             },
