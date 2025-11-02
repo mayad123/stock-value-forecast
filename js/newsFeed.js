@@ -204,11 +204,11 @@ class NewsFeed {
     }
 
     /**
-     * Fetch news from Yahoo Finance RSS feed
+     * Fetch news from multiple RSS sources
      * Priority order:
      * 1. Backend proxy (if configured - recommended for shared access)
      * 2. Yahoo API with OAuth (if credentials are configured)
-     * 3. Public RSS feeds (works for everyone without setup)
+     * 3. Multiple RSS feeds aggregated (works for everyone without setup)
      * Note: Yahoo Finance RSS feeds are publicly available
      */
     async fetchNews() {
@@ -229,72 +229,166 @@ class NewsFeed {
             // If API fails, fall back to RSS methods below
         }
 
-        // Use public RSS feeds (no credentials needed)
-        // Try multiple RSS sources and proxy services with different approaches
-        const rssSources = [
-            // Method 1: RSS2JSON API (may require API key for unlimited access)
+        // Fetch from multiple RSS sources in parallel for more content
+        const allArticles = await this.fetchFromMultipleSources();
+        
+        if (allArticles && allArticles.length > 0) {
+            // Store all filtered articles
+            this.newsData = allArticles;
+            // Display only the latest 10 in the news feed
+            this.displayNews(allArticles.slice(0, 10));
+        } else {
+            // If all sources fail, use fallback sample data
+            this.useFallbackNews();
+        }
+    }
+
+    /**
+     * Fetch news from multiple RSS sources and combine results
+     */
+    async fetchFromMultipleSources() {
+        // Define multiple actual news sources
+        const newsSources = [
             {
+                name: 'Yahoo Finance Headlines',
                 url: 'https://feeds.finance.yahoo.com/rss/2.0/headline',
-                proxy: 'https://api.rss2json.com/v1/api.json?rss_url=',
-                method: 'rss2json'
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                ]
             },
-            // Method 2: AllOrigins proxy (more reliable)
             {
-                url: 'https://feeds.finance.yahoo.com/rss/2.0/headline',
-                proxy: 'https://api.allorigins.win/get?url=',
-                method: 'allorigins'
-            },
-            // Method 3: Different RSS endpoint
-            {
+                name: 'Yahoo Finance Market News',
                 url: 'https://finance.yahoo.com/news/rssindex',
-                proxy: 'https://api.rss2json.com/v1/api.json?rss_url=',
-                method: 'rss2json'
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                ]
             },
-            // Method 4: Alternative proxy service
             {
-                url: 'https://feeds.finance.yahoo.com/rss/2.0/headline',
-                proxy: 'https://thingproxy.freeboard.io/fetch/',
-                method: 'proxy'
+                name: 'MarketWatch Finance',
+                url: 'https://feeds.marketwatch.com/marketwatch/marketpulse',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                ]
             },
-            // Method 5: Try direct RSS fetch (if CORS allows)
             {
-                url: 'https://feeds.finance.yahoo.com/rss/2.0/headline',
-                proxy: null,
-                method: 'direct'
+                name: 'Reuters Business News',
+                url: 'https://feeds.reuters.com/reuters/businessNews',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                ]
+            },
+            {
+                name: 'Reuters Finance',
+                url: 'https://feeds.reuters.com/reuters/finance',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                ]
+            },
+            {
+                name: 'CNBC Top Business',
+                url: 'https://feeds.nbcnews.com/nbcnews/public/business',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' },
+                    { type: 'rss2json', url: 'https://api.rss2json.com/v1/api.json?rss_url=' }
+                ]
+            },
+            {
+                name: 'Financial Times US',
+                url: 'https://www.ft.com/?format=rss&segmentId=b8f9a4a1-5136-6c84-a091-6d76d773e8dc',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
+                ]
+            },
+            {
+                name: 'Seeking Alpha Market News',
+                url: 'https://seekingalpha.com/market_currents.xml',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
+                ]
+            },
+            {
+                name: 'Google News Finance',
+                url: 'https://news.google.com/rss/search?q=finance+stock+market&hl=en-US&gl=US&ceid=US:en',
+                proxies: [
+                    { type: 'allorigins', url: 'https://api.allorigins.win/get?url=' }
+                ]
             }
         ];
 
-        let lastErrorWas422 = false;
+        // Try to fetch from all sources in parallel
+        const fetchPromises = newsSources.map(source => this.tryFetchFromSource(source));
+        const results = await Promise.allSettled(fetchPromises);
+        
+        // Collect all successful results
+        const allArticles = [];
+        const seenLinks = new Set(); // For deduplication
+        
+        results.forEach((result, index) => {
+            if (result.status === 'fulfilled' && result.value && Array.isArray(result.value)) {
+                result.value.forEach(article => {
+                    // Deduplicate by link
+                    if (article.link && !seenLinks.has(article.link)) {
+                        seenLinks.add(article.link);
+                        allArticles.push(article);
+                    }
+                });
+            } else if (result.status === 'rejected') {
+                console.warn(`Failed to fetch from ${newsSources[index].name}:`, result.reason);
+            }
+        });
 
-        // Try each source until one works
-        for (const source of rssSources) {
-            let timeoutId;
+        // Filter by date (last year) and sort
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        
+        const filteredItems = allArticles
+            .filter(item => {
+                if (!item.pubDate) return true; // Include if no date
+                const pubDate = new Date(item.pubDate);
+                return pubDate >= oneYearAgo;
+            })
+            .sort((a, b) => {
+                const dateA = new Date(a.pubDate || 0);
+                const dateB = new Date(b.pubDate || 0);
+                return dateB - dateA; // Newest first
+            });
+
+        console.log(`Fetched ${filteredItems.length} unique articles from ${newsSources.length} sources`);
+        
+        return filteredItems;
+    }
+
+    /**
+     * Try to fetch from a single news source with multiple proxy options
+     */
+    async tryFetchFromSource(source) {
+        // Try each proxy method for this source
+        for (const proxy of source.proxies) {
             try {
                 let fetchUrl;
                 let parseMethod = 'json';
                 
-                // Build URL based on proxy method
-                if (source.method === 'direct') {
-                    // Try direct fetch (will fail if CORS blocked, but worth trying)
-                    fetchUrl = source.url;
-                    parseMethod = 'xml';
-                } else if (source.method === 'allorigins') {
-                    // AllOrigins returns data in a different format
-                    fetchUrl = `${source.proxy}${encodeURIComponent(source.url)}`;
+                if (proxy.type === 'allorigins') {
+                    fetchUrl = `${proxy.url}${encodeURIComponent(source.url)}`;
                     parseMethod = 'allorigins';
-                } else {
-                    // Standard proxy
-                    fetchUrl = `${source.proxy}${encodeURIComponent(source.url)}`;
+                } else if (proxy.type === 'rss2json') {
+                    fetchUrl = `${proxy.url}${encodeURIComponent(source.url)}`;
+                    parseMethod = 'json';
                 }
                 
                 // Create timeout controller
                 const abortController = new AbortController();
-                timeoutId = setTimeout(() => abortController.abort(), 8000); // 8 second timeout
+                const timeoutId = setTimeout(() => abortController.abort(), 8000);
                 
                 const response = await fetch(fetchUrl, {
                     method: 'GET',
                     headers: {
-                        'Accept': parseMethod === 'xml' ? 'application/rss+xml, application/xml, text/xml' : 'application/json',
+                        'Accept': 'application/json',
                     },
                     signal: abortController.signal
                 });
@@ -302,146 +396,46 @@ class NewsFeed {
                 clearTimeout(timeoutId);
                 
                 if (!response.ok) {
-                    if (response.status === 422 || response.status === 429) {
-                        // 422 = Unprocessable Entity, 429 = Too Many Requests (rate limit)
-                        lastErrorWas422 = true;
-                        continue; // Try next source instead of breaking
-                    }
-                    // For other errors, try next source
-                    continue;
+                    continue; // Try next proxy
                 }
                 
-                // Parse response based on method
+                // Parse response
                 let data;
-                if (parseMethod === 'xml') {
-                    // Parse RSS XML directly
-                    const contentType = response.headers.get('content-type') || '';
-                    // Check if response is actually XML
-                    if (!contentType.includes('xml') && !contentType.includes('text/xml') && !contentType.includes('application/xml')) {
-                        // Not XML content type, skip
-                        continue;
-                    }
-                    
-                    const xmlText = await response.text();
-                    // Check if response is actually XML, not HTML error page
-                    const trimmed = xmlText.trim();
-                    if (!trimmed.startsWith('<?xml') && !trimmed.startsWith('<rss') && !trimmed.startsWith('<feed')) {
-                        // Likely an HTML error page or JSON error, skip
-                        continue;
-                    }
-                    data = this.parseRSSXML(xmlText);
-                    if (!data || !data.items || data.items.length === 0) {
-                        continue; // Invalid XML, try next source
-                    }
-                } else if (parseMethod === 'allorigins') {
-                    try {
-                        const wrapper = await response.json();
-                        if (wrapper.contents) {
-                            // Check if contents is valid XML
-                            const contents = wrapper.contents.trim();
-                            if (!contents.startsWith('<?xml') && !contents.startsWith('<rss')) {
-                                // Likely an HTML error page, skip
-                                continue;
-                            }
+                if (parseMethod === 'allorigins') {
+                    const wrapper = await response.json();
+                    if (wrapper.contents) {
+                        const contents = wrapper.contents.trim();
+                        if (contents.startsWith('<?xml') || contents.startsWith('<rss')) {
                             data = this.parseRSSXML(wrapper.contents);
-                            if (!data || !data.items || data.items.length === 0) {
-                                continue; // Invalid XML, try next source
-                            }
-                        } else {
-                            continue; // No contents, try next source
                         }
-                    } catch (e) {
-                        // JSON parse error, try next source
-                        continue;
                     }
                 } else {
-                    // Standard JSON response (RSS2JSON or similar)
-                    try {
-                        const contentType = response.headers.get('content-type') || '';
-                        // Check if response is JSON
-                        if (!contentType.includes('json') && !contentType.includes('application/json')) {
-                            // Not JSON, might be HTML error page, skip
-                            continue;
-                        }
-                        
-                        data = await response.json();
-                        // Check if response is an error
-                        if (data.error || data.status === 'error' || (data.message && data.status)) {
-                            // API returned error (common for rate limits like 422)
-                            continue; // Try next source
-                        }
-                        // Validate data structure
-                        if (!data || (!data.items && !data.feed)) {
-                            continue; // Invalid structure, try next source
-                        }
-                    } catch (e) {
-                        // JSON parse error, try next source
+                    data = await response.json();
+                    if (data.error || data.status === 'error') {
                         continue;
                     }
                 }
                 
-                // Check if data is valid and extract items
+                // Extract items
                 let items = [];
-                if (data && data.items && Array.isArray(data.items) && data.items.length > 0) {
+                if (data && data.items && Array.isArray(data.items)) {
                     items = data.items;
                 } else if (data && data.feed && data.feed.items && Array.isArray(data.feed.items)) {
                     items = data.feed.items;
-                } else if (data && Array.isArray(data)) {
-                    items = data;
                 }
                 
                 if (items.length > 0) {
-                    // Get more articles and filter by date (last year)
-                    const oneYearAgo = new Date();
-                    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-                    
-                    // Filter articles from the last year and sort by date (newest first)
-                    const filteredItems = items
-                        .filter(item => {
-                            if (!item.pubDate) return true; // Include if no date
-                            const pubDate = new Date(item.pubDate);
-                            return pubDate >= oneYearAgo;
-                        })
-                        .sort((a, b) => {
-                            const dateA = new Date(a.pubDate || 0);
-                            const dateB = new Date(b.pubDate || 0);
-                            return dateB - dateA; // Newest first
-                        });
-                    
-                    // Store all filtered articles (not just 10)
-                    this.newsData = filteredItems;
-                    // Display only the latest 10 in the news feed
-                    this.displayNews(filteredItems.slice(0, 10));
-                    return; // Success!
+                    console.log(`Successfully fetched ${items.length} items from ${source.name}`);
+                    return items;
                 }
-                
-                throw new Error('No valid items found');
             } catch (error) {
-                if (timeoutId) clearTimeout(timeoutId);
-                
-                // Don't log timeout errors or 422/429 errors (rate limits)
-                if (error.name !== 'AbortError') {
-                    const errorMsg = error.message || '';
-                    const statusCode = errorMsg.match(/HTTP (\d+)/);
-                    // Skip logging for common non-critical errors
-                    if (statusCode && (statusCode[1] === '422' || statusCode[1] === '429')) {
-                        // Rate limit or unprocessable entity - silently continue
-                    } else if (!errorMsg.includes('422') && !errorMsg.includes('429') && 
-                               !errorMsg.includes('RSS feed unavailable') && 
-                               !errorMsg.includes('CORS') &&
-                               !errorMsg.includes('XML parsing')) {
-                        // Only log unexpected errors
-                        console.warn(`RSS source failed: ${errorMsg}`);
-                    }
-                }
-                // Continue to next source
+                // Continue to next proxy
                 continue;
             }
         }
-
-        // If all sources fail, use fallback sample data
-        // Note: Most free RSS proxies have rate limits - consider using a backend proxy for production
-        this.useFallbackNews();
+        
+        // All proxies failed for this source
+        return [];
     }
 
     /**
