@@ -1,0 +1,80 @@
+# Pipeline configuration (no secrets; use env for API keys)
+# Price ingest: set ALPHAVANTAGE_API_KEY (get free key at https://www.alphavantage.co/support/#api-key)
+# News ingest (when use_news: true): set MARKETAUX_API_KEY (get free key at https://www.marketaux.com/register)
+
+# Tickers universe
+tickers:
+  symbols:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - NVDA
+    - META
+    - TSLA
+    - DIS
+    - NFLX
+    - AMD
+
+# Time horizon and splits (YYYY-MM-DD)
+time_horizon:
+  train_end: "2023-12-31"
+  val_start: "2024-01-01"
+  val_end: "2024-06-30"
+  test_start: "2024-07-01"
+  # Optional: overall start for ingest
+  ingest_start: "2020-01-01"
+
+# Feature engineering
+feature_windows:
+  lookback_days: 21
+  news_lookback_days: 7
+  # Label: next-day return (true) or N-day forward
+  forward_return_days: 1
+
+# Paths (relative to repo root or absolute)
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  data_features: "data/features"
+  models: "models"
+  reports: "reports"
+
+# Which raw dataset to use for build-features ("latest" or a specific version)
+feature_build:
+  raw_dataset_version: "latest"
+  news_dataset_version: "latest"  # used when use_news is true
+
+# Which processed dataset to use for training and backtest
+train:
+  processed_version: "latest"
+eval:
+  processed_version: "latest"
+  # Walk-forward backtest: window_days and step_days enable rolling windows and report generation
+  walk_forward:
+    window_days: 28
+    step_days: 28
+
+# Training hyperparameters
+training:
+  epochs: 50
+  batch_size: 32
+  learning_rate: 0.001
+  validation_split: 0.2
+  early_stopping_patience: 10
+
+# Optional: enable news-based features (Marketaux API)
+# Set MARKETAUX_API_KEY when use_news is true. News ingest runs after price ingest.
+use_news: false
+
+# News ingestion (Marketaux): date range and pagination
+news_ingest:
+  published_after: null   # optional; defaults to time_horizon.ingest_start
+  published_before: null  # optional; defaults to time_horizon.train_end
+  limit: 50
+  max_pages: 20
+  language: "en"
+
+# Serve: which model to load ("latest" or a specific run_id); env MODEL_RUN_ID overrides
+serve:
+  model_run_id: "latest"

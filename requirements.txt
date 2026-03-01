@@ -1,0 +1,20 @@
+# Minimal deps for pipeline scaffolding (config loading, CLI, .env)
+PyYAML>=6.0
+python-dotenv>=1.0.0
+
+# Feature pipeline (price-only, deterministic)
+pandas>=1.5.0
+
+# Eval: simple ML baseline
+numpy>=1.20.0
+scikit-learn>=1.0.0
+
+# Training (TensorFlow 2.x; 2.10+ for SavedModel and Keras compatibility)
+tensorflow>=2.10
+
+# Serving (production-style API)
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
+
+# Testing
+pytest>=7.0.0
