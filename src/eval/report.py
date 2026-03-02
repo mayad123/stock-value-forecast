@@ -99,7 +99,7 @@ def generate_report(
         for i, w in enumerate(windows):
             lines.append(f"- Window {i+1} [{w.get('window_start')} .. {w.get('window_end')}]: n={w.get('n_samples', 0)}")
     lines.append("")
-    lines.append(f"*Report generated from stored backtest artifact (deterministic).*")
+    lines.append("*Report generated from stored backtest artifact (deterministic).*")
 
     report = "\n".join(lines)
     if out_path is not None:

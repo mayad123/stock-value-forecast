@@ -3,7 +3,7 @@ Time-series split and leakage enforcement.
 Train/val/test partitions by chronological boundaries; pipeline fails loudly on violations.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 import pandas as pd
 
@@ -111,7 +111,7 @@ def validate_time_ordering_raw(df: pd.DataFrame, ticker_col: str = "ticker", dat
     dup = df.duplicated(subset=[ticker_col, date_col])
     if dup.any():
         raise TimeOrderingError(
-            f"Raw data has duplicate (ticker, date) pairs. Duplicates prevent deterministic feature generation and can cause leakage."
+            "Raw data has duplicate (ticker, date) pairs. Duplicates prevent deterministic feature generation and can cause leakage."
         )
     sorted_df = df.sort_values([ticker_col, date_col]).reset_index(drop=True)
     if not df.equals(sorted_df):

@@ -33,7 +33,7 @@ def test_marketaux_fetch_retries_on_429():
 
 
 def test_news_ingest_persists_raw_and_normalized(tmp_path):
-    from src.ingest.news import run_ingest_news, _normalize_article
+    from src.ingest.news import run_ingest_news
     raw_root = tmp_path / "raw"
     raw_root.mkdir(parents=True)
     config = {

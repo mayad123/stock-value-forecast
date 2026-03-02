@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pytest
 
 pytest.importorskip("tensorflow")
@@ -14,11 +13,11 @@ pytest.importorskip("tensorflow")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.eval.metrics import compute_metrics
-from src.train.data import load_train_val
-from src.train.load import load_run_record, load_trained_model, predict_with_trained_model
-from src.train.model import build_model
-from src.train.train import run_training
+from src.eval.metrics import compute_metrics  # noqa: E402
+from src.train.data import load_train_val  # noqa: E402
+from src.train.load import load_run_record, load_trained_model, predict_with_trained_model  # noqa: E402
+from src.train.model import build_model  # noqa: E402
+from src.train.train import run_training  # noqa: E402
 
 
 def _make_processed_data(tmp_path: Path, version: str) -> None:

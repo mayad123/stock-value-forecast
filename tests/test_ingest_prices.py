@@ -10,8 +10,8 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.ingest.alphavantage import AlphaVantageError, get_api_key, fetch_daily_raw
-from src.ingest.prices import (
+from src.ingest.alphavantage import AlphaVantageError, get_api_key, fetch_daily_raw  # noqa: E402
+from src.ingest.prices import (  # noqa: E402
     _merge_ticker_history,
     _parse_time_series,
     run_ingest_prices,

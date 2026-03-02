@@ -16,7 +16,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.ingest.alphavantage import (
+from src.ingest.alphavantage import (  # noqa: E402
     AlphaVantageError,
     fetch_daily_raw,
     get_api_key,
@@ -76,7 +76,7 @@ def _read_normalized_csv(path: Path) -> List[Dict[str, Any]]:
         return []
     rows = []
     with open(path) as f:
-        header = f.readline().strip().split(",")
+        f.readline()  # skip header
         for line in f:
             line = line.strip()
             if not line:

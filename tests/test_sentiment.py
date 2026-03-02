@@ -9,14 +9,14 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.features.sentiment import (
+from src.features.sentiment import (  # noqa: E402
     SENTIMENT_FEATURE_NAMES,
     build_sentiment_features,
     load_normalized_news,
     resolve_news_version,
     validate_sentiment_no_future_leakage,
 )
-from src.features.split import LeakageError
+from src.features.split import LeakageError  # noqa: E402
 
 
 def test_build_sentiment_features_empty():

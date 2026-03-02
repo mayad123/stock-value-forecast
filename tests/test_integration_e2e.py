@@ -188,10 +188,10 @@ def test_e2e_full_pipeline_build_train_backtest():
                 models_root=models_root,
                 dataset_version_hint="v1",
             )
+            # run_backtest reads models path from config["paths"]["models"]
             summary = run_backtest(
                 config,
                 processed_root=processed_root,
-                models_root=models_root,
                 dataset_version_hint="v1",
             )
         except (LeakageError, TimeOrderingError) as e:

@@ -3,7 +3,7 @@ Shared evaluation metrics for the trend prediction task (regression + directiona
 Used by baselines and TensorFlow models so all are comparable.
 """
 
-from typing import Any, Dict, List, Union
+from typing import Dict, List, Union
 
 import numpy as np
 

@@ -3,7 +3,7 @@ Baseline predictors for the trend (forward-return) task.
 All expose a common interface: fit(train_df) and predict(test_df) -> y_pred array.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd

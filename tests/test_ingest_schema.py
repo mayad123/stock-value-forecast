@@ -8,8 +8,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -61,7 +59,7 @@ def test_price_normalized_csv_has_required_columns():
         with patch.dict(os.environ, {"ALPHAVANTAGE_API_KEY": "k"}):
             with patch("src.ingest.prices.fetch_daily_raw", return_value=mock_response):
                 with patch("src.ingest.prices.throttle_wait"):
-                    version = run_ingest_prices(config, data_raw_root=raw_root)
+                    run_ingest_prices(config, data_raw_root=raw_root)
         csv_path = raw_root / "prices_normalized" / "AAPL.csv"
         assert csv_path.exists()
         header = csv_path.read_text().split("\n")[0]

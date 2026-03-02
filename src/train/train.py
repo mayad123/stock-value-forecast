@@ -6,14 +6,13 @@ produce SavedModel artifact and run record (config, manifest refs, split boundar
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
-import pandas as pd
 import tensorflow as tf
 
 from src.eval.metrics import compute_metrics
-from src.features.price_features import FEATURE_NAMES, TARGET_NAME
+from src.features.price_features import FEATURE_NAMES
 from src.train.data import load_feature_manifest, load_train_val, resolve_processed_version, get_X_y
 from src.train.model import build_model
 

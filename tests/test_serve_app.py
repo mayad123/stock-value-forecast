@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 # Optional: skip if no fastapi/uvicorn
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 def _make_serve_artifact(tmp_path: Path) -> None:

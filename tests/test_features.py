@@ -11,7 +11,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.features.price_features import (
+from src.features.price_features import (  # noqa: E402
     FEATURE_NAMES,
     TARGET_NAME,
     build_features,
@@ -19,10 +19,8 @@ from src.features.price_features import (
     resolve_raw_version,
     run_build_features,
 )
-from src.features.split import (
-    LeakageError,
+from src.features.split import (  # noqa: E402
     TimeOrderingError,
-    apply_split,
     get_split_boundaries,
     validate_boundaries,
     validate_time_ordering_raw,

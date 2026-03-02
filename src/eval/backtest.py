@@ -4,7 +4,7 @@ Backtest: load test split, run baselines (and optional TF model), compute metric
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 

@@ -13,13 +13,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.ingest.alphavantage import (
+from src.ingest.alphavantage import (  # noqa: E402
     AlphaVantageError,
     fetch_global_quote,
     fetch_monthly,
     fetch_symbol_search,
     fetch_weekly,
-    get_api_key,
     throttle_wait,
 )
 

@@ -1,10 +1,6 @@
 """TensorFlow/Keras model for trend (forward-return) regression."""
 
-from typing import Any, Dict
-
 import tensorflow as tf
-
-from src.features.price_features import FEATURE_NAMES
 
 
 def build_model(

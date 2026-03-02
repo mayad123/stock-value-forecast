@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from src.features.split import (
-    LeakageError,
-    TimeOrderingError,
     apply_split,
     get_split_boundaries,
     validate_boundaries,

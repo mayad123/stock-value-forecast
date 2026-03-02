@@ -12,9 +12,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.eval.baselines import get_baseline_predictions, list_baseline_names, predict_naive, predict_heuristic, predict_simple_ml
-from src.eval.metrics import compute_metrics
-from src.eval.backtest import load_processed_splits, resolve_processed_version, run_backtest
+from src.eval.baselines import predict_naive, predict_heuristic, predict_simple_ml  # noqa: E402
+from src.eval.metrics import compute_metrics  # noqa: E402
+from src.eval.backtest import resolve_processed_version, run_backtest  # noqa: E402
 
 
 def test_compute_metrics():

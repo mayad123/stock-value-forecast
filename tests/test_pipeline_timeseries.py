@@ -12,7 +12,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.features.split import (
+from src.features.split import (  # noqa: E402
     LeakageError,
     TimeOrderingError,
     assign_split,
