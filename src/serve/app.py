@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from src.serve.schemas import ModelInfoResponse, PredictRequest, PredictResponse
 
@@ -29,9 +29,23 @@ _run_id: Optional[str] = None
 _features_df: Optional[pd.DataFrame] = None
 _models_path: Path = _repo_root / "models"
 _processed_path: Path = _repo_root / "data" / "processed"
+_reports_path: Path = _repo_root / "reports"
+_sample_prices_path: Path = _repo_root / "data" / "sample" / "prices_normalized"
+
+
+def _resolve_data_paths() -> None:
+    """Apply env overrides for reports and sample prices (e.g. in tests or cloud)."""
+    global _reports_path, _sample_prices_path
+    import os
+    if os.environ.get("SERVE_REPORTS_PATH"):
+        _reports_path = Path(os.environ["SERVE_REPORTS_PATH"]).resolve()
+    if os.environ.get("SERVE_SAMPLE_PRICES_PATH"):
+        _sample_prices_path = Path(os.environ["SERVE_SAMPLE_PRICES_PATH"]).resolve()
 
 # Schema contract (set at startup from run_record)
 _feature_columns: List[str] = []
+_ticker_columns: List[str] = []
+_ticker_to_idx: Dict[str, int] = {}
 _expected_dim: int = 0
 _schema_fingerprint: str = ""
 
@@ -67,8 +81,9 @@ def _resolve_run_dir() -> Path:
 
 def _load_artifacts() -> None:
     global _model, _run_record, _run_id, _features_df, _models_path, _processed_path
-    global _feature_columns, _expected_dim, _schema_fingerprint
+    global _feature_columns, _ticker_columns, _ticker_to_idx, _expected_dim, _schema_fingerprint
     import os
+    _resolve_data_paths()
     if os.environ.get("SERVE_MODELS_PATH"):
         _models_path = Path(os.environ["SERVE_MODELS_PATH"])
     elif not (_models_path.exists() and any(
@@ -92,6 +107,8 @@ def _load_artifacts() -> None:
     _model, _run_record = load_trained_model(run_dir)
     _run_record.setdefault("run_id", _run_id)
     _feature_columns = list(_run_record.get("feature_columns", []))
+    _ticker_columns = list(_run_record.get("ticker_columns", []))
+    _ticker_to_idx = dict(_run_record.get("ticker_to_idx", {}))
     _expected_dim = len(_feature_columns)
     _schema_fingerprint = _compute_schema_fingerprint(_feature_columns)
     dataset_version = _run_record.get("dataset_version", "")
@@ -117,15 +134,33 @@ def _lookup_features(ticker: str, as_of: str) -> Optional[pd.Series]:
     return subset.iloc[0]
 
 
+def _unknown_ticker_detail(requested: str) -> Dict[str, Any]:
+    """Structured 400 body for unknown ticker: list of known tickers and count."""
+    known = sorted(_ticker_to_idx.keys())
+    return {
+        "error": "unknown_ticker",
+        "message": f"Ticker '{requested}' is not in the trained ticker set.",
+        "requested_ticker": requested,
+        "known_tickers": known,
+        "count": len(known),
+    }
+
+
 def _validate_feature_input(received: Dict[str, Any], strict: bool = True) -> None:
     """
     Validate received keys against trained feature_columns.
     strict=True: exact match (no missing, no extra) for client-provided features.
-    strict=False: only require no missing (extra keys allowed, e.g. for lookup row with ticker/date).
+    strict=False: allow ticker + price columns only; ticker one-hot will be injected. Ticker must be in run record.
     """
     expected_set = set(_feature_columns)
     received_set = set(received.keys()) if received else set()
     missing = expected_set - received_set
+    ticker_set = set(_ticker_columns)
+    if not strict and ticker_set and "ticker" in received_set:
+        missing = missing - ticker_set
+        ticker_val = str(received.get("ticker", "")).strip().upper()
+        if ticker_val and ticker_val not in _ticker_to_idx:
+            raise HTTPException(status_code=400, detail=_unknown_ticker_detail(ticker_val))
     extra = received_set - expected_set
     if missing:
         detail = (
@@ -144,8 +179,16 @@ def _validate_feature_input(received: Dict[str, Any], strict: bool = True) -> No
 
 
 def _row_to_feature_vector(row: Dict[str, Any]) -> List[float]:
-    """Build feature vector in trained order; row must have been validated."""
-    return [float(row.get(c, 0)) for c in _feature_columns]
+    """Build feature vector in trained order; ticker one-hot from row['ticker'] when column not in row."""
+    out: List[float] = []
+    ticker_val = str(row.get("ticker", "")).strip().upper() if row.get("ticker") is not None else ""
+    for c in _feature_columns:
+        if c in _ticker_columns and _ticker_to_idx and (c not in row or row.get(c) is None):
+            idx = _ticker_columns.index(c)
+            out.append(1.0 if _ticker_to_idx.get(ticker_val) == idx else 0.0)
+        else:
+            out.append(float(row.get(c, 0)))
+    return out
 
 
 def _predict_one(feature_vector: List[float]) -> tuple:
@@ -199,6 +242,8 @@ def predict(req: PredictRequest) -> PredictResponse:
         feature_vector = _row_to_feature_vector(req.features)
         used_date = as_of
     else:
+        if _ticker_to_idx and ticker not in _ticker_to_idx:
+            raise HTTPException(status_code=400, detail=_unknown_ticker_detail(ticker))
         row = _lookup_features(ticker, as_of)
         if row is None:
             raise HTTPException(
@@ -230,6 +275,8 @@ def model_info() -> ModelInfoResponse:
     dataset_version = _run_record.get("dataset_version", "unknown")
     training_window = _run_record.get("split_boundaries") or _run_record.get("config", {}).get("time_horizon") or {}
     feature_columns = list(_run_record.get("feature_columns", []))
+    tickers_list = sorted(_ticker_to_idx.keys()) if _ticker_to_idx else None
+    ticker_fp = _run_record.get("ticker_encoding_fingerprint")
     return ModelInfoResponse(
         model_version=run_id,
         dataset_version=dataset_version,
@@ -237,4 +284,83 @@ def model_info() -> ModelInfoResponse:
         feature_schema_fingerprint=_schema_fingerprint,
         feature_columns=feature_columns,
         training_window=training_window,
+        tickers=tickers_list,
+        ticker_encoding_fingerprint=ticker_fp,
     )
+
+
+# ----- Read-only data endpoints (no external APIs, no ingestion/training) -----
+
+
+@app.get("/metrics")
+def get_metrics() -> Dict[str, Any]:
+    """Return contents of reports/latest_metrics.json. Read-only."""
+    path = _reports_path / "latest_metrics.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Metrics file not found. Run a backtest to generate it.")
+    with open(path) as f:
+        return json.load(f)
+
+
+@app.get("/predictions")
+def get_predictions(
+    ticker: Optional[str] = Query(None, description="Filter by ticker (e.g. AAPL)"),
+    model_name: Optional[str] = Query(None, description="Filter by model name"),
+) -> List[Dict[str, Any]]:
+    """Return contents of reports/latest_predictions.csv as JSON. Optional filters: ticker, model_name. Read-only."""
+    path = _reports_path / "latest_predictions.csv"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Predictions file not found. Run a backtest to generate it.")
+    df = pd.read_csv(path)
+    if df.empty:
+        return []
+    if ticker is not None and ticker.strip():
+        t = ticker.strip().upper()
+        if "ticker" in df.columns:
+            df = df[df["ticker"].astype(str).str.upper() == t]
+    if model_name is not None and model_name.strip():
+        m = model_name.strip()
+        if "model_name" in df.columns:
+            df = df[df["model_name"].astype(str) == m]
+    out = df.to_dict(orient="records")
+    for row in out:
+        for k, v in list(row.items()):
+            if isinstance(v, float) and pd.isna(v):
+                row[k] = None
+            elif isinstance(v, (pd.Timestamp,)):
+                row[k] = str(v)
+    return out
+
+
+@app.get("/prices")
+def get_prices(
+    ticker: str = Query(..., description="Ticker symbol (e.g. AAPL)"),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD (inclusive)"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD (inclusive)"),
+) -> List[Dict[str, Any]]:
+    """Return historical price series from offline demo dataset. Date-sorted. Read-only, no external APIs."""
+    if not ticker or not ticker.strip():
+        raise HTTPException(status_code=400, detail="ticker is required")
+    sym = ticker.strip().upper()
+    path = _sample_prices_path / f"{sym}.csv"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"No price data for ticker={sym}")
+    df = pd.read_csv(path)
+    if df.empty:
+        return []
+    if "date" not in df.columns:
+        raise HTTPException(status_code=500, detail="Price file has no date column")
+    df["date"] = df["date"].astype(str)
+    df = df.sort_values("date").reset_index(drop=True)
+    if start_date is not None and start_date.strip():
+        df = df[df["date"] >= start_date.strip()]
+    if end_date is not None and end_date.strip():
+        df = df[df["date"] <= end_date.strip()]
+    out = df.to_dict(orient="records")
+    for row in out:
+        for k, v in list(row.items()):
+            if isinstance(v, pd.Timestamp):
+                row[k] = str(v)
+            elif isinstance(v, float) and pd.isna(v):
+                row[k] = None
+    return out

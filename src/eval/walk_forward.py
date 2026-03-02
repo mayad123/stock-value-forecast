@@ -150,6 +150,7 @@ def run_walk_forward(
             "windows": [],
             "aggregate": {},
             "aggregated_metrics": {},
+            "predictions": [],
         }
 
     # Full chronological dataframe for expanding train
@@ -178,6 +179,11 @@ def run_walk_forward(
     window_results: List[Dict[str, Any]] = []
     all_y_true: List[float] = []
     all_y_pred: Dict[str, List[float]] = {n: [] for n in model_names}
+    forward_days = int((config.get("feature_windows") or {}).get("forward_return_days", 1))
+    predictions_list: List[Dict[str, Any]] = []
+
+    def _target_date(asof: str, days: int) -> str:
+        return (pd.to_datetime(asof) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
 
     for i, (test_start, test_end, subset) in enumerate(windows):
         # Train = all data before this test window start
@@ -207,6 +213,7 @@ def run_walk_forward(
             "n_samples": len(subset),
             "metrics": {},
         }
+        fold_y_preds: Dict[str, Any] = {}
 
         for name in list_baseline_names():
             y_pred = get_baseline_predictions(name, train_fold_df, subset)
@@ -214,6 +221,7 @@ def run_walk_forward(
             fold_row["metrics"][name] = m
             window_row["metrics"][name] = m
             all_y_pred[name].extend(y_pred.tolist())
+            fold_y_preds[name] = y_pred
 
         tf_m = _evaluate_tf(config, models_path, dataset_version, train_fold_df, subset, y_true, log)
         fold_row["metrics"]["tensorflow"] = tf_m
@@ -229,8 +237,32 @@ def run_walk_forward(
                     model, record = load_trained_model(models_path / run_id)
                     y_pred_tf = predict_with_trained_model(model, record, subset)
                     all_y_pred["tensorflow"].extend(y_pred_tf.tolist())
+                    fold_y_preds["tensorflow"] = y_pred_tf
+                else:
+                    fold_y_preds["tensorflow"] = None
             except Exception:
-                pass
+                fold_y_preds["tensorflow"] = None
+        else:
+            fold_y_preds["tensorflow"] = None
+
+        for j in range(len(subset)):
+            r = subset.iloc[j]
+            asof_date = str(r["date"])
+            target_date = _target_date(asof_date, forward_days)
+            ticker = str(r["ticker"]) if "ticker" in subset.columns else ""
+            y_true_j = float(r["target_forward_return"])
+            for model_name, y_pred_arr in fold_y_preds.items():
+                if y_pred_arr is not None and j < len(y_pred_arr):
+                    p = float(y_pred_arr[j]) if hasattr(y_pred_arr[j], "__float__") else float(y_pred_arr[j])
+                    predictions_list.append({
+                        "ticker": ticker,
+                        "asof_date": asof_date,
+                        "target_date": target_date,
+                        "y_true": y_true_j,
+                        "y_pred": p,
+                        "model_name": model_name,
+                        "fold_id": i,
+                    })
 
         folds.append(fold_row)
         window_results.append(window_row)
@@ -254,5 +286,6 @@ def run_walk_forward(
         "windows": window_results,
         "aggregate": aggregate,
         "aggregated_metrics": aggregated_metrics,
+        "predictions": predictions_list,
         "run_timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }

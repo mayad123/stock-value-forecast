@@ -1,15 +1,24 @@
 """
 Backtest: load test split, run baselines (and optional TF model), compute metrics, write summary.
+Also writes a time-aligned predictions CSV (latest_predictions.csv and versioned predictions.csv).
 """
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from src.eval.baselines import get_baseline_predictions, list_baseline_names
 from src.eval.metrics import compute_metrics
+
+
+def _target_date_from_asof(config: Dict[str, Any], asof_date: str) -> str:
+    """Derive target (predicted) date from feature date + forward_return_days."""
+    fw = config.get("feature_windows") or {}
+    days = int(fw.get("forward_return_days", 1))
+    d = pd.to_datetime(asof_date)
+    return (d + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 def resolve_processed_version(processed_root: Path, version_hint: str = "latest") -> str:
@@ -38,32 +47,31 @@ def _evaluate_tensorflow_if_available(
     test_df: pd.DataFrame,
     y_true: Any,
     log: Any,
-) -> Optional[Dict[str, float]]:
-    """If a trained run exists for this dataset (or run_id in config), evaluate with compute_metrics."""
+) -> Tuple[Optional[Dict[str, float]], Optional[Any]]:
+    """If a trained run exists, evaluate with compute_metrics. Returns (metrics, y_pred) for persistence."""
     try:
         from src.train.load import load_trained_model, predict_with_trained_model
     except Exception:
-        return None
+        return None, None
     if not models_path.exists():
-        return None
+        return None, None
     run_id = config.get("eval", {}).get("tensorflow_run_id", "").strip() or None
     if run_id:
         run_dir = models_path / run_id
     else:
-        # Prefer latest run whose name starts with dataset_version
         candidates = [d.name for d in models_path.iterdir() if d.is_dir() and d.name.startswith(dataset_version + "_")]
         if not candidates:
-            return None
+            return None, None
         run_dir = models_path / sorted(candidates)[-1]
     has_model = (run_dir / "model.keras").exists() or (run_dir / "saved_model").exists()
     if not has_model or not (run_dir / "run_record.json").exists():
-        return None
+        return None, None
     try:
         model, record = load_trained_model(run_dir)
         y_pred = predict_with_trained_model(model, record, test_df)
-        return compute_metrics(y_true, y_pred)
+        return compute_metrics(y_true, y_pred), y_pred
     except Exception:
-        return None
+        return None, None
 
 
 def load_processed_splits(
@@ -89,6 +97,56 @@ def _load_feature_manifest(processed_path: Path, dataset_version: str) -> Dict[s
         return {}
     with open(path) as f:
         return json.load(f)
+
+
+def _build_predictions_df(
+    test_df: pd.DataFrame,
+    predictions_by_model: Dict[str, Any],
+    config: Dict[str, Any],
+    fold_id: int = -1,
+) -> pd.DataFrame:
+    """Build time-aligned predictions DataFrame from test rows and per-model y_pred arrays."""
+    rows: List[Dict[str, Any]] = []
+    date_col = "date" if "date" in test_df.columns else test_df.columns[0]
+    ticker_col = "ticker" if "ticker" in test_df.columns else None
+    target_col = "target_forward_return"
+    for model_name, y_pred in predictions_by_model.items():
+        if y_pred is None or len(y_pred) != len(test_df):
+            continue
+        for i in range(len(test_df)):
+            row = test_df.iloc[i]
+            asof = str(row[date_col])
+            rows.append({
+                "ticker": row[ticker_col] if ticker_col else "",
+                "asof_date": asof,
+                "target_date": _target_date_from_asof(config, asof),
+                "y_true": float(row[target_col]),
+                "y_pred": float(y_pred[i]) if hasattr(y_pred[i], "__float__") else float(y_pred[i]),
+                "model_name": model_name,
+                "fold_id": fold_id,
+            })
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["ticker", "asof_date", "target_date", "y_true", "y_pred", "model_name", "fold_id"])
+
+
+def _write_predictions_csv(
+    reports_path: Path,
+    dataset_version: str,
+    predictions_df: pd.DataFrame,
+    log: Any,
+) -> None:
+    """Write reports/latest_predictions.csv and reports/<dataset_version>/predictions.csv."""
+    if predictions_df.empty:
+        log("No predictions to write; skipping predictions CSV")
+        return
+    reports_path.mkdir(parents=True, exist_ok=True)
+    latest_path = reports_path / "latest_predictions.csv"
+    predictions_df.to_csv(latest_path, index=False)
+    log(f"Wrote {latest_path}")
+    out_dir = reports_path / dataset_version
+    out_dir.mkdir(parents=True, exist_ok=True)
+    versioned_path = out_dir / "predictions.csv"
+    predictions_df.to_csv(versioned_path, index=False)
+    log(f"Wrote {versioned_path}")
 
 
 def _write_latest_outputs(
@@ -194,6 +252,10 @@ def run_backtest(
         generate_report(artifact_path, out_path=report_path)
         log(f"Wrote {report_path}")
         _write_latest_outputs(reports_path, None, artifact_path, log)
+        predictions_list = artifact.get("predictions") or []
+        if predictions_list:
+            predictions_df = pd.DataFrame(predictions_list)
+            _write_predictions_csv(reports_path, dataset_version, predictions_df, log)
         return artifact
     else:
         # Single-window (legacy)
@@ -208,13 +270,18 @@ def run_backtest(
             "n_test": len(test_df),
             "models": {},
         }
+        predictions_by_model: Dict[str, Any] = {}
         for name in list_baseline_names():
             log(f"Evaluating baseline: {name}")
             y_pred = get_baseline_predictions(name, train_df, test_df)
             summary["models"][name] = compute_metrics(y_true, y_pred)
-        summary["models"]["tensorflow"] = _evaluate_tensorflow_if_available(
+            predictions_by_model[name] = y_pred
+        tf_metrics, tf_y_pred = _evaluate_tensorflow_if_available(
             config, processed_path, models_path, dataset_version, train_df, test_df, y_true, log
         )
+        summary["models"]["tensorflow"] = tf_metrics
+        if tf_y_pred is not None:
+            predictions_by_model["tensorflow"] = tf_y_pred
         reports_path.mkdir(parents=True, exist_ok=True)
         out_dir = reports_path / dataset_version
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -227,4 +294,6 @@ def run_backtest(
         versioned_md.write_text(generate_single_window_report(summary), encoding="utf-8")
         log(f"Wrote {versioned_md}")
         _write_latest_outputs(reports_path, summary, None, log)
+        predictions_df = _build_predictions_df(test_df, predictions_by_model, config, fold_id=-1)
+        _write_predictions_csv(reports_path, dataset_version, predictions_df, log)
         return summary

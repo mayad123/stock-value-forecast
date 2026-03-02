@@ -1,6 +1,6 @@
 """
 Isolated UI layer for Stock Value Forecast.
-Requires the backend API to be running (python run.py serve) for live data.
+Requires the backend API to be running (python run.py serve). Evaluation page uses GET /metrics and GET /predictions only (no file access).
 """
 
 import json
@@ -15,10 +15,10 @@ import streamlit as st
 # Paths: repo root is parent of frontend/
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _LATEST_METRICS_PATH = _REPO_ROOT / "reports" / "latest_metrics.json"
-# Backend base URL must come from BACKEND_URL env; no default. Empty string treated as missing.
+# Backend base URL must come from BACKEND_URL env; no default.
 _BACKEND_URL = (os.environ.get("BACKEND_URL") or "").strip() or None
+_BACKEND_TIMEOUT = int(os.environ.get("BACKEND_TIMEOUT", "60"))
 
-# Clear, consistent message when metrics file is missing (used on multiple pages)
 _METRICS_FILE_MISSING_MSG = (
     "Metrics file not found. Run a backtest to generate it (e.g. `make demo` or `python run.py backtest`). "
     f"Expected path: `reports/latest_metrics.json` (relative to repo root)."
@@ -32,7 +32,7 @@ def _check_backend() -> bool:
         return False
     if "backend_reachable" not in st.session_state:
         try:
-            r = requests.get(f"{_BACKEND_URL.rstrip('/')}/health", timeout=3)
+            r = requests.get(f"{_BACKEND_URL.rstrip('/')}/health", timeout=_BACKEND_TIMEOUT)
             st.session_state["backend_reachable"] = r.ok
         except requests.RequestException:
             st.session_state["backend_reachable"] = False
@@ -40,20 +40,21 @@ def _check_backend() -> bool:
 
 
 st.set_page_config(
-    page_title="Stock Value Forecast",
-    page_icon="📈",
+    page_title="Stock Value Forecast — Evaluation",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Sidebar navigation
+# Sidebar navigation — Evaluation is default (index 0)
 st.sidebar.title("Stock Value Forecast")
+st.sidebar.caption("ML evaluation & serving")
 st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
     "Navigate",
-    options=["Model Overview", "Prediction Explorer", "Fold Stability"],
-    index=0,  # Default to Model Overview
+    options=["Evaluation", "Model Overview", "Prediction Explorer", "Fold Stability"],
+    index=0,
     label_visibility="collapsed",
 )
 
@@ -62,7 +63,40 @@ if st.sidebar.button("Recheck backend"):
     if "backend_reachable" in st.session_state:
         del st.session_state["backend_reachable"]
     st.rerun()
-st.sidebar.caption("Backend must be running: `python run.py serve`")
+st.sidebar.caption("Backend: `python run.py serve`")
+
+# Try It — single prediction (one click = one POST /predict)
+if _BACKEND_URL:
+    with st.sidebar.expander("Try It — single prediction"):
+        tryit_ticker = st.text_input("Ticker", value="AAPL", max_chars=10, key="tryit_ticker")
+        tryit_date = st.text_input("Date (YYYY-MM-DD)", value="2024-01-26", key="tryit_date")
+        tryit_clicked = st.button("Get prediction", key="tryit_btn")
+        if tryit_clicked:
+            t = (tryit_ticker or "").strip().upper()
+            d = (tryit_date or "").strip()
+            if not t or not d:
+                st.error("Ticker and date are required.")
+            else:
+                try:
+                    r = requests.post(
+                        f"{_BACKEND_URL.rstrip('/')}/predict",
+                        json={"ticker": t, "as_of": d, "horizon": 1},
+                        timeout=_BACKEND_TIMEOUT,
+                    )
+                    if r.ok:
+                        data = r.json()
+                        st.success("Prediction received.")
+                        st.metric("Prediction", data.get("prediction", "—"))
+                        st.caption("Model version: " + (data.get("model_version") or "—"))
+                    else:
+                        try:
+                            err = r.json()
+                            detail = err.get("detail", r.text)
+                        except Exception:
+                            detail = r.text or f"Status {r.status_code}"
+                        st.error("Error: " + (detail[:300] if isinstance(detail, str) else str(detail)[:300]))
+                except requests.RequestException as e:
+                    st.error("Request failed: " + str(e))
 
 # BACKEND_URL must be set explicitly; if missing, show configuration error and skip all API calls.
 if not _BACKEND_URL:
@@ -83,14 +117,221 @@ else:
     # Warning banner if backend unreachable
     if not backend_ok:
         st.warning(
-            "**Backend is unreachable.** Model Overview and Prediction Explorer need the API. "
+            "**Backend is unreachable.** Evaluation and other pages need the API. "
             f"Start it with: `python run.py serve` (expected: BACKEND_URL={_BACKEND_URL})"
         )
 
 
     # Route to pages (wrapped so no unhandled exceptions during navigation)
     try:
-        if page == "Model Overview":
+        if page == "Evaluation":
+            # Evaluation-centric default page: backend only (GET /metrics, GET /predictions), no file access
+            st.header("Evaluation")
+            st.markdown(
+                "Aggregate backtest metrics, baseline vs model comparison, and walk-forward fold stability. "
+                "All data is loaded from the backend API."
+            )
+            st.divider()
+
+            metrics_data = None
+            predictions_data = []
+            metrics_error = None
+            predictions_error = None
+            base = f"{_BACKEND_URL.rstrip('/')}"
+            with st.spinner("Loading evaluation data…"):
+                try:
+                    r = requests.get(f"{base}/metrics", timeout=_BACKEND_TIMEOUT)
+                    if r.ok:
+                        metrics_data = r.json()
+                    else:
+                        metrics_error = f"/metrics returned {r.status_code}"
+                except requests.RequestException as e:
+                    metrics_error = str(e)
+                    st.session_state["backend_reachable"] = False
+                try:
+                    r = requests.get(f"{base}/predictions", timeout=_BACKEND_TIMEOUT)
+                    if r.ok:
+                        predictions_data = r.json() if isinstance(r.json(), list) else []
+                    else:
+                        predictions_error = f"/predictions returned {r.status_code}"
+                except requests.RequestException as e:
+                    predictions_error = str(e)
+
+            if metrics_error:
+                st.error("**Could not load metrics.** " + metrics_error)
+                st.caption("Ensure the backend is running and a backtest has been run (e.g. `make demo`).")
+            elif metrics_data is None:
+                st.warning("No metrics data available.")
+            else:
+                models = metrics_data.get("models") or {}
+                folds = metrics_data.get("folds") or []
+                aggregate = metrics_data.get("aggregate") or {}
+
+                # Filters (ticker, model_name, fold_id) — options from data
+                tickers = sorted(set(p.get("ticker") for p in predictions_data if p.get("ticker")))
+                model_names = sorted(models.keys()) if models else sorted(set(p.get("model_name") for p in predictions_data if p.get("model_name")))
+                fold_ids = sorted(set(p.get("fold_id") for p in predictions_data if p.get("fold_id") is not None))
+
+                st.sidebar.markdown("**Filters**")
+                filter_ticker = st.sidebar.multiselect("Ticker", options=["All"] + tickers, default=["All"], key="eval_ticker")
+                filter_model = st.sidebar.multiselect("Model", options=["All"] + model_names, default=["All"], key="eval_model")
+                filter_fold = st.sidebar.multiselect("Fold ID", options=["All"] + [str(i) for i in fold_ids], default=["All"], key="eval_fold")
+
+                use_all_tickers = "All" in filter_ticker or not filter_ticker
+                use_all_models = "All" in filter_model or not filter_model
+                use_all_folds = "All" in filter_fold or not filter_fold
+                selected_fold_ids = None if use_all_folds else [int(x) for x in filter_fold if x != "All" and x.isdigit()]
+
+                # 1) Aggregate metrics table
+                st.subheader("Aggregate metrics")
+                if not models:
+                    st.info("No model metrics (run a backtest).")
+                else:
+                    metric_keys = ["mse", "rmse", "mae", "r2", "directional_accuracy", "n_samples"]
+                    rows = []
+                    for name, m in models.items():
+                        if not use_all_models and name not in filter_model:
+                            continue
+                        row = {"Model": name}
+                        for k in metric_keys:
+                            v = m.get(k)
+                            if v is None or (isinstance(v, float) and math.isnan(v)):
+                                row[k] = "N/A"
+                            else:
+                                row[k] = round(v, 6) if isinstance(v, float) else v
+                        rows.append(row)
+                    if rows:
+                        st.dataframe(rows, use_container_width=True, hide_index=True)
+                    else:
+                        st.caption("No models match the selected filter.")
+
+                # 2) Baseline vs model comparison
+                st.subheader("Baseline vs model comparison")
+                if models:
+                    chart_metrics = ["mse", "mae", "directional_accuracy"]
+                    chart_data = []
+                    for model_name, m in models.items():
+                        if not use_all_models and model_name not in filter_model:
+                            continue
+                        for mk in chart_metrics:
+                            v = m.get(mk)
+                            if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                                chart_data.append({"Model": model_name, "Metric": mk, "Value": float(v)})
+                    if chart_data:
+                        fig = px.bar(
+                            chart_data,
+                            x="Model",
+                            y="Value",
+                            color="Model",
+                            facet_row="Metric",
+                            barmode="group",
+                            title="Metrics by model",
+                        )
+                        fig.update_layout(showlegend=False)
+                        fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("No plottable metrics.")
+
+                # 3) Fold stability
+                st.subheader("Fold stability")
+                folds_filtered = [f for f in folds if use_all_folds or f.get("fold_id") in (selected_fold_ids or [])]
+                if len(folds) < 2:
+                    st.warning(
+                        "Walk-forward needs at least 2 folds. Run a backtest with `eval.fold_size_days` and `eval.step_size_days`."
+                    )
+                    if folds:
+                        fold_rows = [{"Fold ID": f.get("fold_id"), "Train start": f.get("train_start"), "Train end": f.get("train_end"), "Test start": f.get("test_start"), "Test end": f.get("test_end"), "n_samples": f.get("n_samples")} for f in folds]
+                        st.dataframe(fold_rows, use_container_width=True, hide_index=True)
+                else:
+                    fold_rows = []
+                    for f in folds_filtered:
+                        fold_rows.append({
+                            "Fold ID": f.get("fold_id", "—"),
+                            "Train start": f.get("train_start", "—"),
+                            "Train end": f.get("train_end", "—"),
+                            "Test start": f.get("test_start", "—"),
+                            "Test end": f.get("test_end", "—"),
+                            "n_samples": f.get("n_samples", "—"),
+                        })
+                    if fold_rows:
+                        st.dataframe(fold_rows, use_container_width=True, hide_index=True)
+
+                    # Per-fold metrics (by model)
+                    st.caption("Metrics per fold (by model)")
+                    per_fold_rows = []
+                    for f in folds_filtered:
+                        fid = f.get("fold_id", "—")
+                        for model_name, m in (f.get("metrics") or {}).items():
+                            if not use_all_models and model_name not in filter_model:
+                                continue
+                            row = {"Fold ID": fid, "Model": model_name}
+                            for k in ["mse", "mae", "directional_accuracy"]:
+                                v = m.get(k)
+                                row[k] = round(v, 6) if v is not None and not (isinstance(v, float) and math.isnan(v)) else "N/A"
+                            per_fold_rows.append(row)
+                    if per_fold_rows:
+                        st.dataframe(per_fold_rows, use_container_width=True, hide_index=True)
+
+                    # Aggregate mean ± std across folds
+                    if aggregate:
+                        st.caption("Aggregate (mean ± std across folds)")
+                        agg_rows = []
+                        for model_name, metrics in aggregate.items():
+                            if not use_all_models and model_name not in filter_model:
+                                continue
+                            for metric_key, stats in (metrics or {}).items():
+                                if isinstance(stats, dict) and "mean" in stats and "std" in stats:
+                                    mean_v, std_v = stats["mean"], stats["std"]
+                                    if not (isinstance(mean_v, float) and math.isnan(mean_v)):
+                                        agg_rows.append({"Model": model_name, "Metric": metric_key, "Mean": round(mean_v, 6), "Std": round(std_v, 6)})
+                        if agg_rows:
+                            st.dataframe(agg_rows, use_container_width=True, hide_index=True)
+
+                    # Fold metric variability chart
+                    st.caption("Metric value by fold")
+                    chart_data = []
+                    for f in folds_filtered:
+                        fid = f.get("fold_id")
+                        for model_name, m in (f.get("metrics") or {}).items():
+                            if not use_all_models and model_name not in filter_model:
+                                continue
+                            for mk in ["mse", "mae", "directional_accuracy"]:
+                                v = m.get(mk)
+                                if v is not None and not (isinstance(v, float) and math.isnan(v)):
+                                    chart_data.append({"Fold ID": fid, "Model": model_name, "Metric": mk, "Value": float(v)})
+                    if chart_data:
+                        fig = px.line(
+                            chart_data,
+                            x="Fold ID",
+                            y="Value",
+                            color="Model",
+                            facet_row="Metric",
+                            markers=True,
+                        )
+                        fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+                        st.plotly_chart(fig, use_container_width=True)
+
+                # Filtered predictions table (from GET /predictions)
+                pred_filtered = list(predictions_data)
+                if not use_all_tickers and tickers:
+                    pred_filtered = [p for p in pred_filtered if p.get("ticker") in filter_ticker]
+                if not use_all_models and model_names:
+                    pred_filtered = [p for p in pred_filtered if p.get("model_name") in filter_model]
+                if not use_all_folds and selected_fold_ids is not None:
+                    pred_filtered = [p for p in pred_filtered if p.get("fold_id") in selected_fold_ids]
+                if predictions_data is not None:
+                    st.subheader("Predictions")
+                    if predictions_error and not predictions_data:
+                        st.caption("Predictions could not be loaded: " + predictions_error)
+                    elif pred_filtered:
+                        st.dataframe(pred_filtered[:500], use_container_width=True, hide_index=True)
+                        if len(pred_filtered) > 500:
+                            st.caption(f"Showing first 500 of {len(pred_filtered)} rows.")
+                    else:
+                        st.caption("No prediction rows, or none match the current filters.")
+
+        elif page == "Model Overview":
             st.header("Model Overview")
             st.markdown(
                 "Shows the loaded model’s version, dataset, feature schema, and aggregate backtest metrics, with a baseline comparison. "
@@ -103,7 +344,7 @@ else:
             model_info_error = None
             with st.spinner("Loading model metadata…"):
                 try:
-                    r = requests.get(f"{_BACKEND_URL.rstrip('/')}/model_info", timeout=5)
+                    r = requests.get(f"{_BACKEND_URL.rstrip('/')}/model_info", timeout=_BACKEND_TIMEOUT)
                     if r.ok:
                         model_info = r.json()
                     else:
@@ -225,7 +466,7 @@ else:
                             r = requests.post(
                                 f"{_BACKEND_URL.rstrip('/')}/predict",
                                 json={"ticker": ticker, "as_of": as_of, "horizon": horizon},
-                                timeout=10,
+                                timeout=_BACKEND_TIMEOUT,
                             )
                         if r.ok:
                             data = r.json()

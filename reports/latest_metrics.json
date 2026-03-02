@@ -7,37 +7,30 @@
   "n_test": null,
   "models": {
     "naive": {
-      "mse": 6.319e-06,
-      "rmse": 0.0025137635,
-      "mae": 0.0025136873,
-      "r2": -16504.6857614746,
+      "mse": 0.0004189003,
+      "rmse": 0.0204670548,
+      "mae": 0.0164233763,
+      "r2": -0.0042608458,
       "directional_accuracy": 0.0,
       "n_samples": 13
     },
     "heuristic": {
-      "mse": 0.0,
-      "rmse": 6.3357e-06,
-      "mae": 6.3349e-06,
-      "r2": 0.8951485041,
-      "directional_accuracy": 1.0,
+      "mse": 0.0047166295,
+      "rmse": 0.0686777216,
+      "mae": 0.0340054119,
+      "r2": -10.3075257369,
+      "directional_accuracy": 0.538462,
       "n_samples": 13
     },
     "simple_ml": {
-      "mse": 0.0,
-      "rmse": 0.0,
-      "mae": 0.0,
-      "r2": 1.0,
-      "directional_accuracy": 1.0,
+      "mse": 0.0004189003,
+      "rmse": 0.0204670548,
+      "mae": 0.0164233763,
+      "r2": -0.0042608458,
+      "directional_accuracy": 0.0,
       "n_samples": 13
     },
-    "tensorflow": {
-      "mse": 0.8305203587,
-      "rmse": 0.9113288971,
-      "mae": 0.9107322107,
-      "r2": -2169376980.63969,
-      "directional_accuracy": 1.0,
-      "n_samples": 13
-    }
+    "tensorflow": null
   },
   "folds": [
     {
@@ -49,37 +42,30 @@
       "n_samples": 10,
       "metrics": {
         "naive": {
-          "mse": 6.3582e-06,
-          "rmse": 0.002521539,
-          "mae": 0.0025215034,
-          "r2": -35382.4579833958,
+          "mse": 0.0005339308,
+          "rmse": 0.0231069429,
+          "mae": 0.0195823382,
+          "r2": -0.0234975856,
           "directional_accuracy": 0.0,
           "n_samples": 10
         },
         "heuristic": {
-          "mse": 0.0,
-          "rmse": 6.3746e-06,
-          "mae": 6.3742e-06,
-          "r2": 0.7738612723,
-          "directional_accuracy": 1.0,
+          "mse": 0.0060842659,
+          "rmse": 0.0780017041,
+          "mae": 0.0414616133,
+          "r2": -10.6629931928,
+          "directional_accuracy": 0.5,
           "n_samples": 10
         },
         "simple_ml": {
-          "mse": 0.0,
-          "rmse": 0.0,
-          "mae": 0.0,
-          "r2": 1.0,
-          "directional_accuracy": 1.0,
+          "mse": 0.0005339308,
+          "rmse": 0.0231069429,
+          "mae": 0.0195823382,
+          "r2": -0.0234975856,
+          "directional_accuracy": 0.0,
           "n_samples": 10
         },
-        "tensorflow": {
-          "mse": 0.81543851,
-          "rmse": 0.9030163398,
-          "mae": 0.9025405939,
-          "r2": -4537954122.23616,
-          "directional_accuracy": 1.0,
-          "n_samples": 10
-        }
+        "tensorflow": null
       }
     },
     {
@@ -91,57 +77,50 @@
       "n_samples": 3,
       "metrics": {
         "naive": {
-          "mse": 6.1885e-06,
-          "rmse": 0.0024876695,
-          "mae": 0.0024876338,
-          "r2": -34850.8348664002,
+          "mse": 3.54654e-05,
+          "rmse": 0.0059552835,
+          "mae": 0.0058935032,
+          "r2": -47.4485081826,
           "directional_accuracy": 0.0,
           "n_samples": 3
         },
         "heuristic": {
-          "mse": 0.0,
-          "rmse": 6.2043e-06,
-          "mae": 6.2039e-06,
-          "r2": 0.7832174267,
-          "directional_accuracy": 1.0,
+          "mse": 0.0001578415,
+          "rmse": 0.0125634967,
+          "mae": 0.0091514073,
+          "r2": -214.6237436063,
+          "directional_accuracy": 0.666667,
           "n_samples": 3
         },
         "simple_ml": {
-          "mse": 0.0,
-          "rmse": 0.0,
-          "mae": 0.0,
-          "r2": 1.0,
-          "directional_accuracy": 1.0,
+          "mse": 3.54654e-05,
+          "rmse": 0.0059552835,
+          "mae": 0.0058935032,
+          "r2": -47.4485081826,
+          "directional_accuracy": 0.0,
           "n_samples": 3
         },
-        "tensorflow": {
-          "mse": 0.8807931877,
-          "rmse": 0.9385058272,
-          "mae": 0.9380375999,
-          "r2": -4960371860.562726,
-          "directional_accuracy": 1.0,
-          "n_samples": 3
-        }
+        "tensorflow": null
       }
     }
   ],
   "aggregate": {
     "naive": {
       "mse": {
-        "mean": 6.2733e-06,
-        "std": 8.49e-08
+        "mean": 0.0002846981,
+        "std": 0.0002492327
       },
       "rmse": {
-        "mean": 0.0025046042,
-        "std": 1.69348e-05
+        "mean": 0.0145311132,
+        "std": 0.0085758297
       },
       "mae": {
-        "mean": 0.0025045686,
-        "std": 1.69348e-05
+        "mean": 0.0127379207,
+        "std": 0.0068444175
       },
       "r2": {
-        "mean": -35116.646424898,
-        "std": 265.8115584978
+        "mean": -23.7360028841,
+        "std": 23.7125052985
       },
       "directional_accuracy": {
         "mean": 0.0,
@@ -154,24 +133,24 @@
     },
     "heuristic": {
       "mse": {
-        "mean": 0.0,
-        "std": 0.0
+        "mean": 0.0031210537,
+        "std": 0.0029632122
       },
       "rmse": {
-        "mean": 6.2894e-06,
-        "std": 8.51e-08
+        "mean": 0.0452826004,
+        "std": 0.0327191037
       },
       "mae": {
-        "mean": 6.2891e-06,
-        "std": 8.51e-08
+        "mean": 0.0253065103,
+        "std": 0.016155103
       },
       "r2": {
-        "mean": 0.7785393495,
-        "std": 0.0046780772
+        "mean": -112.6433683995,
+        "std": 101.9803752067
       },
       "directional_accuracy": {
-        "mean": 1.0,
-        "std": 0.0
+        "mean": 0.5833335,
+        "std": 0.0833335
       },
       "n_samples": {
         "mean": 6.5,
@@ -180,23 +159,23 @@
     },
     "simple_ml": {
       "mse": {
-        "mean": 0.0,
-        "std": 0.0
+        "mean": 0.0002846981,
+        "std": 0.0002492327
       },
       "rmse": {
-        "mean": 0.0,
-        "std": 0.0
+        "mean": 0.0145311132,
+        "std": 0.0085758297
       },
       "mae": {
-        "mean": 0.0,
-        "std": 0.0
+        "mean": 0.0127379207,
+        "std": 0.0068444175
       },
       "r2": {
-        "mean": 1.0,
-        "std": 0.0
+        "mean": -23.7360028841,
+        "std": 23.7125052985
       },
       "directional_accuracy": {
-        "mean": 1.0,
+        "mean": 0.0,
         "std": 0.0
       },
       "n_samples": {
@@ -206,28 +185,28 @@
     },
     "tensorflow": {
       "mse": {
-        "mean": 0.8481158489,
-        "std": 0.0326773389
+        "mean": NaN,
+        "std": NaN
       },
       "rmse": {
-        "mean": 0.9207610835,
-        "std": 0.0177447437
+        "mean": NaN,
+        "std": NaN
       },
       "mae": {
-        "mean": 0.9202890969,
-        "std": 0.017748503
+        "mean": NaN,
+        "std": NaN
       },
       "r2": {
-        "mean": -4749162991.399443,
-        "std": 211208869.16328287
+        "mean": NaN,
+        "std": NaN
       },
       "directional_accuracy": {
-        "mean": 1.0,
-        "std": 0.0
+        "mean": NaN,
+        "std": NaN
       },
       "n_samples": {
-        "mean": 6.5,
-        "std": 3.5
+        "mean": NaN,
+        "std": NaN
       }
     }
   }

@@ -124,6 +124,12 @@ def test_backtest_produces_summary_artifact():
         assert "Dataset version" in latest_md.read_text()
         assert "Split boundaries" in latest_md.read_text()
         assert "Notes" in latest_md.read_text()
+        # Single-window also writes predictions CSV (fold_id = -1)
+        latest_pred = reports / "latest_predictions.csv"
+        assert latest_pred.exists()
+        pred_df = pd.read_csv(latest_pred)
+        assert "y_true" in pred_df.columns and "y_pred" in pred_df.columns and "model_name" in pred_df.columns
+        assert (reports / v / "predictions.csv").exists()
 
 
 def test_walk_forward_and_report_deterministic():
@@ -265,6 +271,16 @@ def test_backtest_walk_forward_produces_at_least_two_folds_and_latest_has_folds_
         assert "folds" in latest
         assert "aggregate" in latest
         assert len(latest["folds"]) >= 2
+        # Predictions CSV for plotting: time-aligned y_true, y_pred, model_name, fold_id
+        latest_pred = reports / "latest_predictions.csv"
+        assert latest_pred.exists(), "backtest must write reports/latest_predictions.csv"
+        pred_df = pd.read_csv(latest_pred)
+        for col in ["ticker", "asof_date", "target_date", "y_true", "y_pred", "model_name", "fold_id"]:
+            assert col in pred_df.columns, f"predictions CSV must have column {col}"
+        assert len(pred_df["fold_id"].unique()) >= 2, "demo mode must produce predictions for >= 2 folds"
+        assert set(pred_df["model_name"].unique()) & {"naive", "heuristic", "simple_ml"}, "must include baselines"
+        versioned_pred = reports / v / "predictions.csv"
+        assert versioned_pred.exists(), "backtest must write reports/<version>/predictions.csv"
 
 
 def test_resolve_processed_version_latest():

@@ -1,6 +1,6 @@
 """Request/response schemas for the prediction API."""
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -45,3 +45,11 @@ class ModelInfoResponse(BaseModel):
     )
     feature_columns: list = Field(default_factory=list, description="Feature names in trained order")
     training_window: dict = Field(default_factory=dict, description="Train/val date boundaries")
+    tickers: Optional[List[str]] = Field(
+        None,
+        description="Tickers supported by the model (trained ticker set). None if no ticker encoding.",
+    )
+    ticker_encoding_fingerprint: Optional[str] = Field(
+        None,
+        description="Fingerprint of the ticker encoding mapping (for train/serve consistency).",
+    )

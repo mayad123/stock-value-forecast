@@ -45,26 +45,27 @@ def _print_help() -> None:
     print("         (ingest prices, optional news, then features/train/backtest; requires API keys)")
     print("")
     print("Single stages (use --config for live_apis; default config is recruiter_demo):")
-    print("  ingest | build-features | train | backtest | serve")
+    print("  ingest | build-features | train | backtest | serve | manifest [VERSION]")
     print("")
     print("Examples:")
     print("  make demo          # or: python run.py demo")
     print("  make live         # or: python run.py live")
     print("  python run.py --config configs/live_apis.yaml ingest")
+    print("  python run.py manifest demo      # regenerate data/sample/manifests/demo.json from CSVs")
 
 
 def _parse_args(argv: list) -> tuple:
-    """Return (config_path_or_none, stage). Supports --config CONFIG and -h/--help."""
+    """Return (config_path_or_none, stage, rest_positionals). Supports --config CONFIG and -h/--help."""
     args = argv[1:]
     if "-h" in args or "--help" in args:
-        return None, "help"
+        return None, "help", []
     config_path = None
     while args and args[0] == "--config" and len(args) >= 2:
         config_path = args[1]
         args = args[2:]
     if not args:
-        return config_path, None
-    return config_path, args[0]
+        return config_path, None, []
+    return config_path, args[0], args[1:]
 
 
 def main() -> None:
@@ -77,10 +78,30 @@ def main() -> None:
     }
     workflows = ("demo", "live")
 
-    config_path_arg, stage = _parse_args(sys.argv)
+    config_path_arg, stage, rest_args = _parse_args(sys.argv)
     if stage == "help":
         _print_help()
         sys.exit(0)
+    if stage == "manifest":
+        # manifest [VERSION]: regenerate manifest from prices_normalized/; VERSION defaults from config
+        from src._cli import load_config
+        from src.data.manifest import generate_manifest
+        if config_path_arg:
+            config_path = Path(config_path_arg)
+            if not config_path.is_absolute():
+                config_path = REPO_ROOT / config_path
+            config = load_config(str(config_path))
+        else:
+            config = load_config(str(REPO_ROOT / DEMO_CONFIG))
+        raw = config.get("paths", {}).get("data_raw", "data/sample")
+        raw_root = REPO_ROOT / raw if not Path(raw).is_absolute() else Path(raw)
+        version = rest_args[0] if rest_args else config.get("feature_build", {}).get("raw_dataset_version", "demo")
+        try:
+            generate_manifest(raw_root, version)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Manifest: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
     if stage is None or (stage not in stages and stage not in workflows):
         _print_help()
         sys.exit(1)

@@ -1,16 +1,19 @@
 """
 Training routine: load processed data, train on train partition, evaluate on validation,
 produce SavedModel artifact and run record (config hash, git commit, seeds, schema, metrics).
-Every run dir contains run_record.json, model artifact, and metrics_summary.json for audit.
+Trains one model across all tickers with explicit ticker identity (one-hot) so the model
+does not collapse to average ticker behavior. Ticker encoding mapping is persisted for serve.
 """
 
+import hashlib
 import json
 import random
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 
 from src._cli import config_hash_from_dict, config_hash_from_file, get_git_commit
@@ -18,6 +21,28 @@ from src.eval.metrics import compute_metrics
 from src.features.price_features import FEATURE_NAMES
 from src.train.data import load_feature_manifest, load_train_val, resolve_processed_version, get_X_y
 from src.train.model import build_model
+
+TICKER_COL = "ticker"
+
+
+def _ticker_encoding_fingerprint(ticker_to_idx: Dict[str, int]) -> str:
+    """Stable fingerprint of the ticker encoding mapping for run record traceability."""
+    blob = json.dumps(ticker_to_idx, sort_keys=True)
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+def _add_ticker_onehot(
+    df: pd.DataFrame,
+    ticker_to_idx: Dict[str, int],
+    ticker_columns: List[str],
+) -> None:
+    """Add one-hot ticker columns to df in place. Unseen tickers get all zeros."""
+    for col in ticker_columns:
+        df[col] = 0.0
+    for ticker, idx in ticker_to_idx.items():
+        if idx < len(ticker_columns):
+            col = ticker_columns[idx]
+            df.loc[df[TICKER_COL].astype(str) == ticker, col] = 1.0
 
 
 def _run_id(dataset_version: str) -> str:
@@ -69,24 +94,34 @@ def run_training(
     if len(train_df) == 0:
         raise ValueError("No training data; need at least one train row")
 
+    # Ticker identity: one-hot encoding so model sees which ticker (no collapse to average)
+    if TICKER_COL not in train_df.columns:
+        raise ValueError("Training data must include a 'ticker' column for multi-ticker training.")
+    tickers = sorted(train_df[TICKER_COL].astype(str).unique().tolist())
+    ticker_to_idx = {t: i for i, t in enumerate(tickers)}
+    ticker_columns = [f"ticker_{i}" for i in range(len(tickers))]
+    _add_ticker_onehot(train_df, ticker_to_idx, ticker_columns)
+    _add_ticker_onehot(val_df, ticker_to_idx, ticker_columns)
+    log(f"Tickers in training: {tickers} (one-hot encoded)")
+
     feature_manifest = load_feature_manifest(processed_path, dataset_version)
     manifest_cols = feature_manifest.get("feature_columns")
-    if manifest_cols:
-        feature_cols = [c for c in manifest_cols if c in train_df.columns]
-    else:
-        feature_cols = [c for c in FEATURE_NAMES if c in train_df.columns]
-    if len(feature_cols) == 0:
-        raise ValueError("No feature columns found in train data")
-    log(f"Using {len(feature_cols)} features: {feature_cols}")
-    n_features = len(feature_cols)
+    price_cols = [c for c in (manifest_cols or FEATURE_NAMES) if c in train_df.columns and c not in ticker_columns]
+    if len(price_cols) == 0:
+        raise ValueError("No price feature columns found in train data")
+    feature_cols = ticker_columns + price_cols
+    log(f"Using {len(feature_cols)} features: {len(ticker_columns)} ticker + {len(price_cols)} price")
 
     X_train, y_train = get_X_y(train_df, feature_cols)
     X_val, y_val = get_X_y(val_df, feature_cols)
 
-    # Normalize: fit on train only, apply to train and val
+    # Normalize: fit on train only; do not scale one-hot (ticker) columns
     mean = np.mean(X_train, axis=0, dtype=np.float32)
     std = np.std(X_train, axis=0, dtype=np.float32)
     std[std == 0] = 1.0
+    n_ticker = len(ticker_columns)
+    mean[:n_ticker] = 0.0
+    std[:n_ticker] = 1.0
     X_train_n = (X_train - mean) / std
     has_val = len(val_df) > 0
     if has_val:
@@ -165,7 +200,7 @@ def run_training(
     model.save(saved_model_path)
     log(f"Saved model: {saved_model_path}")
 
-    # Run record: config hash, git commit, seeds, schema, dataset refs, metrics, scaler
+    # Run record: config hash, git commit, seeds, schema, dataset refs, metrics, scaler, ticker encoding
     feature_manifest = load_feature_manifest(processed_path, dataset_version)
     split_boundaries = feature_manifest.get("split_boundaries") or config.get("time_horizon", {})
     model_input_shape: List[Optional[int]] = [int(s) if s is not None else None for s in model.input_shape]
@@ -186,6 +221,11 @@ def run_training(
         "feature_manifest_path": str(processed_path / dataset_version / "feature_manifest.json"),
         "split_boundaries": split_boundaries,
         "feature_columns": feature_cols,
+        "tickers": tickers,
+        "ticker_encoding": "one-hot",
+        "ticker_to_idx": ticker_to_idx,
+        "ticker_columns": ticker_columns,
+        "ticker_encoding_fingerprint": _ticker_encoding_fingerprint(ticker_to_idx),
         "scaler": {
             "mean": mean.tolist(),
             "scale": std.tolist(),
@@ -207,6 +247,9 @@ def run_training(
         "config_hash": config_hash,
         "git_commit_hash": git_commit_hash,
         "dataset_version": dataset_version,
+        "tickers": tickers,
+        "ticker_encoding": "one-hot",
+        "ticker_encoding_fingerprint": run_record["ticker_encoding_fingerprint"],
         "feature_columns": feature_cols,
         "model_input_shape": model_input_shape,
         "split_boundaries": split_boundaries,
