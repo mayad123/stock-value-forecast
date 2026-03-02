@@ -91,6 +91,46 @@ def _load_feature_manifest(processed_path: Path, dataset_version: str) -> Dict[s
         return json.load(f)
 
 
+def _write_latest_outputs(
+    reports_path: Path,
+    summary: Optional[Dict[str, Any]],
+    artifact_path: Optional[Path],
+    log: Any,
+) -> None:
+    """
+    Write reports/latest_metrics.json and reports/latest_backtest.md (overwritten each run).
+    Use summary for single-window; use artifact_path (backtest_run.json) for walk-forward.
+    """
+    from src.eval.report import generate_report, generate_single_window_report
+
+    reports_path.mkdir(parents=True, exist_ok=True)
+    latest_json = reports_path / "latest_metrics.json"
+    latest_md = reports_path / "latest_backtest.md"
+
+    if summary is not None:
+        with open(latest_json, "w") as f:
+            json.dump(summary, f, indent=2)
+        latest_md.write_text(generate_single_window_report(summary), encoding="utf-8")
+    else:
+        with open(artifact_path) as f:
+            data = json.load(f)
+        setup = data.get("setup", {})
+        agg = data.get("aggregated_metrics", {})
+        latest_summary = {
+            "dataset_version": setup.get("dataset_version"),
+            "train_end": setup.get("train_end"),
+            "val_start": setup.get("val_start"),
+            "val_end": setup.get("val_end"),
+            "test_start": setup.get("test_start"),
+            "n_test": None,
+            "models": agg,
+        }
+        with open(latest_json, "w") as f:
+            json.dump(latest_summary, f, indent=2)
+        generate_report(artifact_path, out_path=latest_md)
+    log(f"Wrote {latest_json} and {latest_md}")
+
+
 def run_backtest(
     config: Dict[str, Any],
     processed_root: Optional[Path] = None,
@@ -128,7 +168,7 @@ def run_backtest(
         log("No test rows; skipping backtest")
         return {"dataset_version": dataset_version, "models": {}}
 
-    wf = config.get("eval", {}).get("walk_forward", {})
+    wf = (config.get("eval") or {}).get("walk_forward") or {}
     if wf.get("window_days") and wf.get("step_days"):
         # Walk-forward: iterate windows, save artifact, generate report
         from src.eval.walk_forward import run_walk_forward
@@ -148,13 +188,18 @@ def run_backtest(
         report_path = out_dir / "backtest_report.md"
         generate_report(artifact_path, out_path=report_path)
         log(f"Wrote {report_path}")
+        _write_latest_outputs(reports_path, None, artifact_path, log)
         return artifact
     else:
         # Single-window (legacy)
+        th = config.get("time_horizon", {})
         y_true = test_df["target_forward_return"].astype(float).values
         summary = {
             "dataset_version": dataset_version,
-            "test_start": config.get("time_horizon", {}).get("test_start"),
+            "train_end": th.get("train_end"),
+            "val_start": th.get("val_start"),
+            "val_end": th.get("val_end"),
+            "test_start": th.get("test_start"),
             "n_test": len(test_df),
             "models": {},
         }
@@ -172,4 +217,9 @@ def run_backtest(
         with open(out_file, "w") as f:
             json.dump(summary, f, indent=2)
         log(f"Wrote {out_file}")
+        from src.eval.report import generate_single_window_report
+        versioned_md = out_dir / "backtest_report.md"
+        versioned_md.write_text(generate_single_window_report(summary), encoding="utf-8")
+        log(f"Wrote {versioned_md}")
+        _write_latest_outputs(reports_path, summary, None, log)
         return summary

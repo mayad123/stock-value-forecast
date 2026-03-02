@@ -222,10 +222,26 @@ def run_build_features(
         processed_path = repo_root / processed_path
 
     raw_version_hint = config.get("feature_build", {}).get("raw_dataset_version", "latest")
-    raw_dataset_version = resolve_raw_version(raw_root, raw_version_hint)
+    try:
+        raw_dataset_version = resolve_raw_version(raw_root, raw_version_hint)
+    except FileNotFoundError as e:
+        if config.get("mode") == "live_apis":
+            raise FileNotFoundError(
+                f"Live mode expects normalized price data at {raw_root}. "
+                "Run ingest first (e.g. make live or python run.py live)."
+            ) from e
+        raise
     log(f"Raw dataset version: {raw_dataset_version}")
 
-    df = load_raw_normalized(raw_root, raw_dataset_version)
+    try:
+        df = load_raw_normalized(raw_root, raw_dataset_version)
+    except FileNotFoundError as e:
+        if config.get("mode") == "live_apis":
+            raise FileNotFoundError(
+                f"Live mode expects normalized price data at {raw_root}. "
+                "Run ingest first (e.g. make live or python run.py live)."
+            ) from e
+        raise
     log(f"Loaded {len(df)} rows from normalized prices")
 
     fw = config.get("feature_windows", {})

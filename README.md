@@ -22,7 +22,7 @@ Ingest → Features → Train → Backtest → Serve
 
 | Stage | Role |
 |--------|------|
-| **Ingest** | Fetch and persist raw data: historical prices (Alpha Vantage) and, optionally, news (Marketaux). Company symbols and config are loaded from `configs/default.yaml`. |
+| **Ingest** | Fetch and persist raw data: historical prices (Alpha Vantage) and, optionally, news (Marketaux). Use `configs/live_apis.yaml` for live ingest; default config is `configs/recruiter_demo.yaml` (offline). |
 | **Features** | Build model inputs: price-derived series, and optionally sentiment + relevancy from news. Output is a fixed-size feature vector (e.g. 8-D) per (symbol, date) with normalization stats for training and serving. |
 | **Train** | Train a small neural network (e.g. 8 → 16 → dropout → 8 → 1) to predict trend score. Training is config-driven; checkpoints and artifacts go to `models/`. |
 | **Backtest** | Evaluate on a held-out time period: regression metrics (e.g. MSE, MAE) and directional accuracy. Reports and plots go to `reports/`. |
@@ -38,7 +38,7 @@ End-to-end flow: **Ingest** writes to `data/`, **Features** read raw data and wr
 - **News (optional):** [Marketaux](https://www.marketaux.com/) financial news API. Set `use_news: true` in config and `MARKETAUX_API_KEY` in the environment. News ingest runs after price ingest; raw responses are stored under `data/raw/news/{ticker}/{ingestion_timestamp}.json`, normalized news under `data/raw/news_normalized/{version}/`, and a manifest under `data/raw/manifests/news_{version}.json`. Sentiment is aggregated by day (average sentiment, count, momentum) and merged into the price feature pipeline with a **leakage rule**: no article published after the prediction cutoff date is included in features.
 - **Enrichment (optional):** Alpha Vantage SYMBOL_SEARCH, GLOBAL_QUOTE, and weekly/monthly time series. Toggle in config under `enrichment.*`; additive only, not required for training. Raw data under `data/raw/enrichment/`; manifests record what was collected. See [docs/alpha-vantage-free-tier.md](docs/alpha-vantage-free-tier.md).
 
-All ingest is configuration-driven (`configs/default.yaml`); API keys are supplied via environment variables, not committed.
+Configuration is two-mode: **recruiter_demo** (default, offline, no API keys) and **live_apis** (Alpha Vantage + optional Marketaux). API keys are supplied via environment variables, not committed. With `mode: live_apis`, the pipeline fails early with a clear message if required keys are missing.
 
 ---
 
@@ -68,6 +68,32 @@ Backtest evaluation is performed only on the **test** window; validation is used
 
 ---
 
+## Recruiter demo (default config, offline, no API keys)
+
+The **default config** is `configs/recruiter_demo.yaml` (`mode: recruiter_demo`). Run the pipeline on bundled sample data with **no environment variables or API keys**. Ideal for a quick run after a fresh clone. You still need a venv and `pip install -r requirements.txt`; no `.env` or API keys are required.
+
+```bash
+# From repo root: create venv, install deps, then run demo (no .env)
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+make demo
+```
+
+Or run directly (default config is recruiter_demo):
+
+```bash
+python run.py demo
+# explicit config: python run.py --config configs/recruiter_demo.yaml demo
+```
+
+This runs **build-features → train → backtest** using `data/sample/` (minimal normalized prices for AAPL and MSFT over a short date range). You get:
+
+- Processed features under `data/processed/demo/`
+- A trained model under `models/`
+- A backtest metrics summary under `reports/`
+
+---
+
 ## Quick start (run with APIs)
 
 End-to-end run with real API keys: ingest data → build features → train → (optional) backtest → serve.
@@ -93,32 +119,32 @@ ALPHAVANTAGE_API_KEY=your_alpha_vantage_key_here
 MARKETAUX_API_KEY=your_marketaux_key_here
 ```
 
-(Leave `MARKETAUX_API_KEY` empty if you’re not using news; keep `use_news: false` in `configs/default.yaml`.)
+(Leave `MARKETAUX_API_KEY` empty if you’re not using news; keep `use_news: false` in `configs/live_apis.yaml`.)
 
-**3. Run the pipeline**
+**3. Run the pipeline with live APIs**
 
-From the repo root with venv activated:
+From the repo root with venv activated, use the **live_apis** config. If required API keys are missing, the pipeline exits immediately with a clear message.
 
 ```bash
 # Ingest prices (and news if use_news: true and MARKETAUX_API_KEY set)
-python run.py ingest
+python run.py --config configs/live_apis.yaml ingest
 
 # Build features from ingested data
-python run.py build-features
+python run.py --config configs/live_apis.yaml build-features
 
 # Train model (writes to models/)
-python run.py train
+python run.py --config configs/live_apis.yaml train
 
 # Optional: run backtest
-python run.py backtest
+python run.py --config configs/live_apis.yaml backtest
 
 # Start the prediction API (loads latest model)
-python run.py serve
+python run.py --config configs/live_apis.yaml serve
 ```
 
 The API will be at **http://127.0.0.1:8000**. Try `GET /health`, `GET /model_info`, and `POST /predict` with a JSON body like `{"ticker": "AAPL", "as_of": "2024-01-15", "horizon": 1}`.
 
-**Using Make:** `make ingest`, `make build-features`, `make train`, `make backtest`, `make serve`.
+**Using Make:** `make demo` (default config, offline, no keys). For live data use `--config configs/live_apis.yaml` with the run.py commands above; `make ingest`, `make build-features`, etc. use the default recruiter_demo config unless you pass a config explicitly.
 
 ---
 
@@ -235,15 +261,15 @@ The service resolves the model run via `MODEL_RUN_ID` (env) or the latest run un
 
 ## Quickstart (pipeline stages)
 
-Assume a Unix-like shell and Python 3.9+ with a virtual environment activated (see **Development** above). Config and env (e.g. `DATA_DIR`, `MODEL_DIR`) can be set in `configs/default.yaml` or environment variables.
+Assume a Unix-like shell and Python 3.9+ with a virtual environment activated (see **Development** above). **Default config** is `configs/recruiter_demo.yaml` (offline). For live ingest and features use `configs/live_apis.yaml` and set API keys (pipeline fails early if keys are missing).
 
 | Stage | Command (placeholder) | Purpose |
 |--------|------------------------|--------|
-| **Ingest** | `python -m src.ingest.run --config configs/default.yaml` | Fetch and save raw price (and optional news) data. |
-| **Features** | `python -m src.features.run --config configs/default.yaml` | Build feature vectors and normalization stats from raw data. |
-| **Train** | `python -m src.train.train --config configs/default.yaml` | Train model; save checkpoints and final artifact to `models/`. |
-| **Backtest** | `python -m src.eval.run --config configs/default.yaml` | Run evaluation and write metrics/plots to `reports/`. |
-| **Serve** | `uvicorn src.serve.app:app --reload` | Start the prediction API (loads model from `models/`). |
+| **Ingest** | `python run.py --config configs/live_apis.yaml ingest` | Fetch and save raw price (and optional news) data. |
+| **Features** | `python run.py --config configs/live_apis.yaml build-features` | Build feature vectors from raw data. |
+| **Train** | `python run.py --config configs/live_apis.yaml train` | Train model; save checkpoints and final artifact to `models/`. |
+| **Backtest** | `python run.py --config configs/live_apis.yaml backtest` | Run evaluation and write metrics/plots to `reports/`. |
+| **Serve** | `python run.py --config configs/live_apis.yaml serve` | Start the prediction API (loads model from `models/`). |
 
 Exact entry points (e.g. `src.ingest.run`) may be added or renamed as the codebase is implemented; the table above defines the intended usage per stage.
 

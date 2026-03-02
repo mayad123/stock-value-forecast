@@ -1,10 +1,59 @@
 """
-Generate a human-readable backtest report from a stored backtest artifact.
+Generate human-readable backtest reports. Single-window and walk-forward artifacts supported.
 Deterministic: same artifact -> same report.
 """
 
 from pathlib import Path
 from typing import Any, Dict, Union
+
+
+def generate_single_window_report(summary: Dict[str, Any]) -> str:
+    """
+    Generate Markdown report from a single-window backtest summary.
+    Summary must have: dataset_version, models (name -> metrics dict).
+    Optional: train_end, val_start, val_end, test_start, n_test.
+    Includes: dataset version, split boundaries / eval window, metrics per model, notes.
+    """
+    lines = [
+        "# Backtest Report",
+        "",
+        "## Dataset version",
+        "",
+        f"- **Processed dataset version:** {summary.get('dataset_version', '—')}",
+        "",
+        "## Split boundaries / evaluation window",
+        "",
+        f"- **Train end:** {summary.get('train_end', '—')}",
+        f"- **Val start:** {summary.get('val_start', '—')}",
+        f"- **Val end:** {summary.get('val_end', '—')}",
+        f"- **Test start:** {summary.get('test_start', '—')}",
+        f"- **Test samples:** {summary.get('n_test', '—')}",
+        "",
+        "## Metrics (per model)",
+        "",
+        "| Model | MSE | RMSE | MAE | R² | Dir. accuracy | n_samples |",
+        "|-------|-----|------|-----|-----|----------------|-----------|",
+    ]
+    models = summary.get("models") or {}
+    for name in ["naive", "heuristic", "simple_ml", "tensorflow"]:
+        m = models.get(name)
+        if m is None:
+            lines.append(f"| {name} | — | — | — | — | — | — |")
+        else:
+            lines.append(
+                f"| {name} | {m.get('mse', '—')} | {m.get('rmse', '—')} | {m.get('mae', '—')} | "
+                f"{m.get('r2', '—')} | {m.get('directional_accuracy', '—')} | {m.get('n_samples', '—')} |"
+            )
+    lines.extend([
+        "",
+        "## Notes",
+        "",
+        "Single-window backtest. Baselines and (if available) the trained TensorFlow model "
+        "were evaluated on the test split. Metrics are computed on the same test set for comparison.",
+        "",
+        "*Report generated from backtest run (deterministic).*",
+    ])
+    return "\n".join(lines)
 
 
 def _fmt_metrics(m: Dict[str, Any]) -> str:
@@ -98,8 +147,15 @@ def generate_report(
         lines.append("**Per-window sample counts:**")
         for i, w in enumerate(windows):
             lines.append(f"- Window {i+1} [{w.get('window_start')} .. {w.get('window_end')}]: n={w.get('n_samples', 0)}")
-    lines.append("")
-    lines.append("*Report generated from stored backtest artifact (deterministic).*")
+    lines.extend([
+        "",
+        "## Notes",
+        "",
+        "Walk-forward backtest. Baselines and (if available) the TensorFlow model were evaluated "
+        "on each rolling test window; reported metrics are aggregated across windows.",
+        "",
+        "*Report generated from stored backtest artifact (deterministic).*",
+    ])
 
     report = "\n".join(lines)
     if out_path is not None:

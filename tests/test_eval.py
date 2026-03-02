@@ -111,6 +111,20 @@ def test_backtest_produces_summary_artifact():
             loaded = json.load(f)
         assert loaded["models"]["naive"]["n_samples"] == 2
 
+        # Every run writes latest_* (overwritten each run)
+        latest_json = reports / "latest_metrics.json"
+        latest_md = reports / "latest_backtest.md"
+        assert latest_json.exists()
+        assert latest_md.exists()
+        with open(latest_json) as f:
+            latest = json.load(f)
+        assert isinstance(latest, dict)
+        assert "dataset_version" in latest and "models" in latest
+        assert latest["models"]["naive"]["n_samples"] == 2
+        assert "Dataset version" in latest_md.read_text()
+        assert "Split boundaries" in latest_md.read_text()
+        assert "Notes" in latest_md.read_text()
+
 
 def test_walk_forward_and_report_deterministic():
     """Walk-forward backtest produces artifact and report; report is regenerated deterministically."""
@@ -162,6 +176,56 @@ def test_walk_forward_and_report_deterministic():
         report2 = generate_report(artifact_path, out_path=report_path)
         assert report2 == report_path.read_text()
         assert report1 == report2
+
+        # Every run writes latest_* (overwritten each run)
+        latest_json = reports / "latest_metrics.json"
+        latest_md = reports / "latest_backtest.md"
+        assert latest_json.exists()
+        assert latest_md.exists()
+        with open(latest_json) as f:
+            latest = json.load(f)
+        assert isinstance(latest, dict)
+        assert "dataset_version" in latest and "models" in latest
+        assert "Notes" in latest_md.read_text()
+
+
+def test_backtest_overwrites_latest_preserves_versioned():
+    """Running backtest twice overwrites latest_*.json/.md; versioned outputs (reports/<version>/) remain."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        processed = tmp / "processed"
+        reports = tmp / "reports"
+        models = tmp / "models"
+        reports.mkdir(parents=True)
+        models.mkdir(parents=True)
+        v = "v1"
+        (processed / v).mkdir(parents=True)
+        rows = [
+            "ticker,date,split,return_1d,return_5d,return_21d,volatility_5d,volatility_21d,range_hl,volume_pct_1d,target_forward_return",
+            "AAPL,2024-01-22,train,0.01,0.02,0.03,0.01,0.01,0.01,0.0,0.01",
+            "AAPL,2024-01-23,train,0.0,0.01,0.02,0.01,0.01,0.01,0.0,0.0",
+            "AAPL,2024-01-27,test,-0.01,-0.01,0.0,0.01,0.01,0.01,0.0,-0.01",
+            "AAPL,2024-01-28,test,0.01,0.0,0.01,0.01,0.01,0.01,0.0,0.01",
+        ]
+        (processed / v / "features.csv").write_text("\n".join(rows))
+        config = {
+            "paths": {"data_processed": str(processed), "reports": str(reports), "models": str(models)},
+            "time_horizon": {"test_start": "2024-07-01"},
+            "eval": {},
+        }
+        run_backtest(config, processed_root=processed, dataset_version_hint="v1")
+        latest_json = reports / "latest_metrics.json"
+        latest_md = reports / "latest_backtest.md"
+        first_json = json.loads(latest_json.read_text())
+        first_md = latest_md.read_text()
+        run_backtest(config, processed_root=processed, dataset_version_hint="v1")
+        second_json = json.loads(latest_json.read_text())
+        second_md = latest_md.read_text()
+        assert first_json["dataset_version"] == second_json["dataset_version"] == "v1"
+        assert "models" in second_json
+        assert (reports / v / "metrics_summary.json").exists()
+        assert (reports / v / "backtest_report.md").exists()
+        assert "Notes" in second_md
 
 
 def test_resolve_processed_version_latest():

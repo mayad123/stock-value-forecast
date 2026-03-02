@@ -146,6 +146,10 @@ def run_ingest_prices(
     - Saves manifest under data/raw/manifests/{dataset_version}.json with ticker_histories (status, new_rows)
     Returns dataset_version (ingestion timestamp string).
     """
+    if config.get("mode") == "recruiter_demo":
+        print("Demo mode uses sample data. Use live_apis mode for ingestion.", file=sys.stderr)
+        sys.exit(1)
+
     if log is None:
         def log(msg: str) -> None:
             print(f"[INGEST] {msg}")

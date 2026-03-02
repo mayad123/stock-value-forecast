@@ -1,0 +1,79 @@
+# Live APIs: price ingest (Alpha Vantage), optional news (Marketaux), features from live data.
+# Requires ALPHAVANTAGE_API_KEY; set MARKETAUX_API_KEY if use_news is true.
+# Run: python run.py --config configs/live_apis.yaml ingest | build-features | train | backtest | serve
+
+mode: live_apis
+
+# Tickers universe
+tickers:
+  symbols:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - NVDA
+    - META
+    - TSLA
+    - DIS
+    - NFLX
+    - AMD
+
+# Time horizon and splits (YYYY-MM-DD)
+time_horizon:
+  train_end: "2023-12-31"
+  val_start: "2024-01-01"
+  val_end: "2024-06-30"
+  test_start: "2024-07-01"
+  ingest_start: "2020-01-01"
+
+# Feature engineering
+feature_windows:
+  lookback_days: 21
+  news_lookback_days: 7
+  forward_return_days: 1
+
+# Live normalized dataset location (ingest writes here; build-features reads from here)
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  data_features: "data/features"
+  models: "models"
+  reports: "reports"
+
+feature_build:
+  raw_dataset_version: "latest"
+  news_dataset_version: "latest"
+
+train:
+  processed_version: "latest"
+eval:
+  processed_version: "latest"
+  walk_forward:
+    window_days: 28
+    step_days: 28
+
+training:
+  epochs: 50
+  batch_size: 32
+  learning_rate: 0.001
+  validation_split: 0.2
+  early_stopping_patience: 10
+
+# Set use_news: true and MARKETAUX_API_KEY for news ingestion and news-based features
+use_news: false
+
+enrichment:
+  symbol_search: false
+  global_quote: false
+  weekly_monthly: false
+  symbol_search_keywords: "stock"
+
+news_ingest:
+  published_after: null
+  published_before: null
+  limit: 50
+  max_pages: 20
+  language: "en"
+
+serve:
+  model_run_id: "latest"

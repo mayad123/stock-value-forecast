@@ -11,6 +11,10 @@ if str(_REPO_ROOT) not in sys.path:
 
 def run(config: dict) -> None:
     """Run the ingest pipeline: Alpha Vantage prices -> raw JSON + normalized + manifest."""
+    if config.get("mode") == "recruiter_demo":
+        print("Demo mode uses sample data. Use live_apis mode for ingestion.", file=sys.stderr)
+        sys.exit(1)
+
     from src._cli import stage_log, stage_done
     from src.ingest.alphavantage import AlphaVantageError
     from src.ingest.prices import run_ingest_prices

@@ -55,6 +55,8 @@ htmlcov/
 
 # Pipeline artifacts
 data/
+!data/sample/
+!data/sample/**
 models/
 reports/
 
