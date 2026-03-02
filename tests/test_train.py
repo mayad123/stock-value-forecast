@@ -69,7 +69,7 @@ def test_run_training_produces_artifact():
         assert run_id.startswith("v1_")
 
         run_dir = models / run_id
-        assert (run_dir / "saved_model").exists()
+        assert (run_dir / "model.keras").exists()
         assert (run_dir / "run_record.json").exists()
 
         record = load_run_record(run_dir)

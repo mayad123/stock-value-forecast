@@ -33,16 +33,19 @@ def _resolve_run_dir() -> Path:
     """Resolve model run directory: env MODEL_RUN_ID, or latest in models/."""
     import os
     run_id = os.environ.get("MODEL_RUN_ID", "").strip()
+    def _has_model(d: Path) -> bool:
+        return (d / "model.keras").exists() or (d / "saved_model").exists()
+
     if run_id:
         d = _models_path / run_id
-        if d.is_dir() and (d / "saved_model").exists():
+        if d.is_dir() and _has_model(d):
             return d
         raise FileNotFoundError(f"MODEL_RUN_ID run not found: {run_id}")
     if not _models_path.exists():
         raise FileNotFoundError(f"Models dir not found: {_models_path}")
     candidates = sorted(
         d for d in _models_path.iterdir()
-        if d.is_dir() and (d / "saved_model").exists() and (d / "run_record.json").exists()
+        if d.is_dir() and _has_model(d) and (d / "run_record.json").exists()
     )
     if not candidates:
         raise FileNotFoundError(f"No trained model found in {_models_path}")

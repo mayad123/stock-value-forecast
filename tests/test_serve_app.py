@@ -28,8 +28,7 @@ def _make_serve_artifact(tmp_path: Path) -> None:
         tf.keras.layers.Dense(4, activation="relu"),
         tf.keras.layers.Dense(1, activation="tanh"),
     ])
-    (run_dir / "saved_model").mkdir()
-    model.save(run_dir / "saved_model", save_format="tf")
+    model.save(run_dir / "model.keras")
     run_record = {
         "run_id": run_id,
         "dataset_version": "v1",

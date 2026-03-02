@@ -142,9 +142,9 @@ def run_training(
     out_dir = models_path / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save SavedModel (loadable independently)
-    saved_model_path = out_dir / "saved_model"
-    model.save(saved_model_path, save_format="tf")
+    # Save model (Keras 3: .keras file; no save_format=tf)
+    saved_model_path = out_dir / "model.keras"
+    model.save(saved_model_path)
     log(f"Saved model: {saved_model_path}")
 
     # Run record: config, dataset refs, split boundaries, metrics, scaler params

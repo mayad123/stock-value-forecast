@@ -20,13 +20,17 @@ def load_run_record(run_dir: Path) -> Dict[str, Any]:
 
 def load_trained_model(run_dir: Path) -> Tuple[tf.keras.Model, Dict[str, Any]]:
     """
-    Load SavedModel and run record from models/{run_id}/.
+    Load model and run record from models/{run_id}/. Supports model.keras (Keras 3) or saved_model/ (legacy).
     Returns (model, run_record). Use run_record['scaler'] and run_record['feature_columns'] for inference.
     """
+    keras_path = run_dir / "model.keras"
     saved_model_path = run_dir / "saved_model"
-    if not saved_model_path.exists():
-        raise FileNotFoundError(f"SavedModel not found: {saved_model_path}")
-    model = tf.keras.models.load_model(saved_model_path)
+    if keras_path.exists():
+        model = tf.keras.models.load_model(keras_path)
+    elif saved_model_path.exists():
+        model = tf.keras.models.load_model(saved_model_path)
+    else:
+        raise FileNotFoundError(f"Model not found: expected {keras_path} or {saved_model_path}")
     record = load_run_record(run_dir)
     return model, record
 

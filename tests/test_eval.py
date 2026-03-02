@@ -72,6 +72,9 @@ def test_backtest_produces_summary_artifact():
         tmp = Path(tmp)
         processed = tmp / "processed"
         reports = tmp / "reports"
+        models = tmp / "models"
+        reports.mkdir(parents=True)
+        models.mkdir(parents=True)
         v = "v1"
         (processed / v).mkdir(parents=True)
         # Minimal features with split column
@@ -85,7 +88,7 @@ def test_backtest_produces_summary_artifact():
         (processed / v / "features.csv").write_text("\n".join(rows))
 
         config = {
-            "paths": {"data_processed": str(processed), "reports": str(reports)},
+            "paths": {"data_processed": str(processed), "reports": str(reports), "models": str(models)},
             "time_horizon": {"test_start": "2024-07-01"},
             "eval": {"processed_version": "v1"},
         }

@@ -138,7 +138,7 @@ def test_e2e_build_features_then_train_no_leakage():
 
         assert run_id
         run_dir = models_root / run_id
-        assert (run_dir / "saved_model").exists()
+        assert (run_dir / "model.keras").exists()
         assert (run_dir / "run_record.json").exists()
         with open(run_dir / "run_record.json") as f:
             record = json.load(f)
@@ -200,5 +200,5 @@ def test_e2e_full_pipeline_build_train_backtest():
         assert run_id
         assert isinstance(summary, dict)
         assert "dataset_version" in summary or "models" in summary
-        assert (models_root / run_id / "saved_model").exists()
+        assert (models_root / run_id / "model.keras").exists()
         assert (processed_root / "v1" / "features.csv").exists()

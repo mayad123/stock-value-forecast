@@ -44,6 +44,8 @@ def _evaluate_tensorflow_if_available(
         from src.train.load import load_trained_model, predict_with_trained_model
     except Exception:
         return None
+    if not models_path.exists():
+        return None
     run_id = config.get("eval", {}).get("tensorflow_run_id", "").strip() or None
     if run_id:
         run_dir = models_path / run_id
@@ -53,7 +55,8 @@ def _evaluate_tensorflow_if_available(
         if not candidates:
             return None
         run_dir = models_path / sorted(candidates)[-1]
-    if not (run_dir / "saved_model").exists() or not (run_dir / "run_record.json").exists():
+    has_model = (run_dir / "model.keras").exists() or (run_dir / "saved_model").exists()
+    if not has_model or not (run_dir / "run_record.json").exists():
         return None
     try:
         model, record = load_trained_model(run_dir)

@@ -36,7 +36,8 @@ def _evaluate_tf(
         if not candidates:
             return None
         run_dir = models_path / sorted(candidates)[-1]
-    if not (run_dir / "saved_model").exists() or not (run_dir / "run_record.json").exists():
+    has_model = (run_dir / "model.keras").exists() or (run_dir / "saved_model").exists()
+    if not has_model or not (run_dir / "run_record.json").exists():
         return None
     try:
         model, record = load_trained_model(run_dir)
