@@ -21,7 +21,7 @@ PRICE_NORMALIZED_COLUMNS = [
 # Required keys in price manifest (from run_ingest_prices)
 PRICE_MANIFEST_KEYS = [
     "dataset_version", "ingestion_timestamp", "api_endpoint", "tickers",
-    "date_range", "raw_paths", "normalized_paths",
+    "date_range", "raw_paths", "normalized_paths", "ticker_histories",
 ]
 
 # Required columns in news normalized CSV (from src/ingest/news)
@@ -49,7 +49,7 @@ def test_price_normalized_csv_has_required_columns():
             "Time Series (Daily)": {
                 "2024-01-02": {
                     "1. open": "100", "2. high": "101", "3. low": "99",
-                    "4. close": "100.5", "5. adjusted close": "100.5", "6. volume": "1000000",
+                    "4. close": "100.5", "5. volume": "1000000",
                 },
             },
         }
@@ -59,10 +59,10 @@ def test_price_normalized_csv_has_required_columns():
             "time_horizon": {},
         }
         with patch.dict(os.environ, {"ALPHAVANTAGE_API_KEY": "k"}):
-            with patch("src.ingest.prices.fetch_daily_adjusted", return_value=mock_response):
+            with patch("src.ingest.prices.fetch_daily_raw", return_value=mock_response):
                 with patch("src.ingest.prices.throttle_wait"):
                     version = run_ingest_prices(config, data_raw_root=raw_root)
-        csv_path = raw_root / "prices_normalized" / version / "prices.csv"
+        csv_path = raw_root / "prices_normalized" / "AAPL.csv"
         assert csv_path.exists()
         header = csv_path.read_text().split("\n")[0]
         got_columns = [c.strip() for c in header.split(",")]
@@ -86,7 +86,7 @@ def test_price_manifest_has_required_keys():
             "Time Series (Daily)": {
                 "2024-01-02": {
                     "1. open": "100", "2. high": "101", "3. low": "99",
-                    "4. close": "100.5", "5. adjusted close": "100.5", "6. volume": "1000000",
+                    "4. close": "100.5", "5. volume": "1000000",
                 },
             },
         }
@@ -96,7 +96,7 @@ def test_price_manifest_has_required_keys():
             "time_horizon": {},
         }
         with patch.dict(os.environ, {"ALPHAVANTAGE_API_KEY": "k"}):
-            with patch("src.ingest.prices.fetch_daily_adjusted", return_value=mock_response):
+            with patch("src.ingest.prices.fetch_daily_raw", return_value=mock_response):
                 with patch("src.ingest.prices.throttle_wait"):
                     version = run_ingest_prices(config, data_raw_root=raw_root)
         manifest_path = raw_root / "manifests" / f"{version}.json"

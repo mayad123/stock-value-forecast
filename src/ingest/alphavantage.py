@@ -1,6 +1,7 @@
 """
-Alpha Vantage API client for daily OHLCV data.
-Free tier: 5 requests/minute, 25/day. Throttling and retries implemented.
+Alpha Vantage API client: daily OHLCV (primary) and optional free-tier enrichment.
+Primary: TIME_SERIES_DAILY with outputsize=compact. Enrichment: SYMBOL_SEARCH, GLOBAL_QUOTE,
+TIME_SERIES_WEEKLY, TIME_SERIES_MONTHLY (all non-premium per official docs). Throttling and retries.
 """
 
 import os
@@ -13,8 +14,12 @@ FREE_TIER_INTERVAL_SEC = 13
 # Env var for API key
 API_KEY_ENV = "ALPHAVANTAGE_API_KEY"
 
-# Endpoint (daily adjusted = includes adjusted close)
+# Endpoint — free-tier daily only (no TIME_SERIES_DAILY_ADJUSTED, no outputsize=full)
 BASE_URL = "https://www.alphavantage.co/query"
+
+# Free-tier function and output size (compact = last ~100 days; full is premium for daily)
+FUNCTION_DAILY = "TIME_SERIES_DAILY"
+OUTPUTSIZE_COMPACT = "compact"
 
 
 class AlphaVantageError(Exception):
@@ -51,31 +56,26 @@ def _is_invalid_key_response(data: Dict[str, Any]) -> bool:
     return "invalid" in msg and "api key" in msg
 
 
-def fetch_daily_adjusted(
-    symbol: str,
-    api_key: str,
-    outputsize: str = "full",
-    session: Optional[Any] = None,
-) -> Dict[str, Any]:
+def _is_premium_response(data: Dict[str, Any]) -> bool:
+    """True if response indicates a premium-only endpoint was requested."""
+    if not isinstance(data, dict):
+        return False
+    msg = (data.get("Note") or data.get("Information") or "").lower()
+    return "premium" in msg and "endpoint" in msg
+
+
+def _request(params: Dict[str, str]) -> Dict[str, Any]:
     """
-    Fetch TIME_SERIES_DAILY_ADJUSTED for one symbol.
-    Returns raw JSON as returned by the API (unchanged).
-    Raises AlphaVantageError on missing/invalid key or unrecoverable rate limit.
+    Execute one Alpha Vantage GET request; validate for key/rate-limit/premium errors.
+    Returns parsed JSON. Raises AlphaVantageError on invalid key, premium response, or unrecoverable rate limit.
     """
     import urllib.parse
     import urllib.request
 
-    params = {
-        "function": "TIME_SERIES_DAILY_ADJUSTED",
-        "symbol": symbol,
-        "apikey": api_key,
-        "outputsize": outputsize,
-    }
     url = BASE_URL + "?" + urllib.parse.urlencode(params)
-
     last_error: Optional[Exception] = None
     max_retries = 3
-    retry_delays = [2, 5, 10]  # seconds
+    retry_delays = [2, 5, 10]
 
     for attempt in range(max_retries):
         try:
@@ -83,12 +83,14 @@ def fetch_daily_adjusted(
             with urllib.request.urlopen(req, timeout=30) as resp:
                 raw = resp.read().decode("utf-8")
             data = __import__("json").loads(raw)
-
-            # Check for API key / rate limit errors in body
             if _is_invalid_key_response(data):
                 raise AlphaVantageError(
                     "Invalid API key. Check that ALPHAVANTAGE_API_KEY is correct. "
                     "Verify at https://www.alphavantage.co/support/#api-key"
+                )
+            if _is_premium_response(data):
+                raise AlphaVantageError(
+                    "Alpha Vantage returned a premium-endpoint response. This code uses only free-tier endpoints."
                 )
             if _is_rate_limit_response(data):
                 if attempt == max_retries - 1:
@@ -98,19 +100,15 @@ def fetch_daily_adjusted(
                     )
                 time.sleep(retry_delays[attempt])
                 continue
-
-            # Success: return raw response unchanged
             return data
         except AlphaVantageError:
             raise
         except urllib.error.HTTPError as e:
-            if e.code == 429:
-                if attempt == max_retries - 1:
-                    raise AlphaVantageError(
-                        "Rate limit exceeded (HTTP 429) without recovery after retries."
-                    ) from e
+            if e.code == 429 and attempt < max_retries - 1:
                 time.sleep(retry_delays[attempt])
                 continue
+            if e.code == 429:
+                raise AlphaVantageError("Rate limit exceeded (HTTP 429) without recovery after retries.") from e
             if e.code == 401:
                 raise AlphaVantageError("API key rejected (HTTP 401).") from e
             last_error = e
@@ -124,8 +122,55 @@ def fetch_daily_adjusted(
                 time.sleep(retry_delays[attempt])
                 continue
             raise AlphaVantageError(f"Request failed after {max_retries} retries.") from last_error
-
     raise AlphaVantageError("Request failed.") from last_error
+
+
+def fetch_daily_raw(
+    symbol: str,
+    api_key: str,
+    session: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Fetch daily raw candles: TIME_SERIES_DAILY (free tier) with outputsize=compact (latest ~100 points).
+    Daily adjusted is not used by the pipeline; this is the only daily fetch method.
+    Returns raw JSON as returned by the API (unchanged).
+    """
+    return _request({
+        "function": FUNCTION_DAILY,
+        "symbol": symbol,
+        "apikey": api_key,
+        "outputsize": OUTPUTSIZE_COMPACT,
+    })
+
+
+# --- Optional enrichment (free-tier; not premium per official docs) ---
+
+def fetch_symbol_search(keywords: str, api_key: str) -> Dict[str, Any]:
+    """SYMBOL_SEARCH: ticker discovery/validation. Free utility endpoint."""
+    return _request({"function": "SYMBOL_SEARCH", "keywords": keywords, "apikey": api_key})
+
+
+def fetch_global_quote(symbol: str, api_key: str) -> Dict[str, Any]:
+    """GLOBAL_QUOTE: lightweight current snapshot for one symbol. Free time series utility."""
+    return _request({"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": api_key})
+
+
+def fetch_weekly(symbol: str, api_key: str) -> Dict[str, Any]:
+    """TIME_SERIES_WEEKLY: weekly OHLCV (compact, no outputsize=full). Free; not premium in docs."""
+    return _request({
+        "function": "TIME_SERIES_WEEKLY",
+        "symbol": symbol,
+        "apikey": api_key,
+    })
+
+
+def fetch_monthly(symbol: str, api_key: str) -> Dict[str, Any]:
+    """TIME_SERIES_MONTHLY: monthly OHLCV (compact). Free; not premium in docs."""
+    return _request({
+        "function": "TIME_SERIES_MONTHLY",
+        "symbol": symbol,
+        "apikey": api_key,
+    })
 
 
 def throttle_wait() -> None:

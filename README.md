@@ -34,8 +34,9 @@ End-to-end flow: **Ingest** writes to `data/`, **Features** read raw data and wr
 
 ## Data sources
 
-- **Prices (primary):** Alpha Vantage daily OHLCV. Set `ALPHAVANTAGE_API_KEY` for ingest.
+- **Prices (primary):** Alpha Vantage daily OHLCV (free tier only: `TIME_SERIES_DAILY`, `outputsize=compact`). Set `ALPHAVANTAGE_API_KEY` for ingest. See [docs/alpha-vantage-free-tier.md](docs/alpha-vantage-free-tier.md) for which endpoints are used and why they are free-tier compliant.
 - **News (optional):** [Marketaux](https://www.marketaux.com/) financial news API. Set `use_news: true` in config and `MARKETAUX_API_KEY` in the environment. News ingest runs after price ingest; raw responses are stored under `data/raw/news/{ticker}/{ingestion_timestamp}.json`, normalized news under `data/raw/news_normalized/{version}/`, and a manifest under `data/raw/manifests/news_{version}.json`. Sentiment is aggregated by day (average sentiment, count, momentum) and merged into the price feature pipeline with a **leakage rule**: no article published after the prediction cutoff date is included in features.
+- **Enrichment (optional):** Alpha Vantage SYMBOL_SEARCH, GLOBAL_QUOTE, and weekly/monthly time series. Toggle in config under `enrichment.*`; additive only, not required for training. Raw data under `data/raw/enrichment/`; manifests record what was collected. See [docs/alpha-vantage-free-tier.md](docs/alpha-vantage-free-tier.md).
 
 All ingest is configuration-driven (`configs/default.yaml`); API keys are supplied via environment variables, not committed.
 
@@ -64,6 +65,60 @@ Backtest evaluation is performed only on the **test** window; validation is used
   - **Direction:** Accuracy (and optionally precision/recall) when thresholding the score to up/down/sideways.
   - **Reporting:** Metrics and, where applicable, simple plots (e.g. predicted vs actual, time series of predictions) are written to `reports/` for reproducibility.
 - **Walk-forward backtest:** When `eval.walk_forward` is set in config (e.g. `window_days: 28`, `step_days: 28`), the backtest iterates through time windows, evaluates baselines and the TensorFlow model on each window, and writes `reports/{version}/backtest_run.json` plus a human-readable `backtest_report.md`. The report can be regenerated deterministically from the stored artifact: `from src.eval.report import generate_report; generate_report("reports/<version>/backtest_run.json", "reports/<version>/backtest_report.md")`.
+
+---
+
+## Quick start (run with APIs)
+
+End-to-end run with real API keys: ingest data → build features → train → (optional) backtest → serve.
+
+**1. One-time setup**
+
+```bash
+cd stock-value-forecast
+python3 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+**2. Add your API keys**
+
+- Get a free key: [Alpha Vantage](https://www.alphavantage.co/support/#api-key) (prices). Optional: [Marketaux](https://www.marketaux.com/register) (news).
+- In the repo root, create `.env` (or copy from `.env.example`) and set:
+
+```bash
+# .env (in repo root)
+ALPHAVANTAGE_API_KEY=your_alpha_vantage_key_here
+MARKETAUX_API_KEY=your_marketaux_key_here
+```
+
+(Leave `MARKETAUX_API_KEY` empty if you’re not using news; keep `use_news: false` in `configs/default.yaml`.)
+
+**3. Run the pipeline**
+
+From the repo root with venv activated:
+
+```bash
+# Ingest prices (and news if use_news: true and MARKETAUX_API_KEY set)
+python run.py ingest
+
+# Build features from ingested data
+python run.py build-features
+
+# Train model (writes to models/)
+python run.py train
+
+# Optional: run backtest
+python run.py backtest
+
+# Start the prediction API (loads latest model)
+python run.py serve
+```
+
+The API will be at **http://127.0.0.1:8000**. Try `GET /health`, `GET /model_info`, and `POST /predict` with a JSON body like `{"ticker": "AAPL", "as_of": "2024-01-15", "horizon": 1}`.
+
+**Using Make:** `make ingest`, `make build-features`, `make train`, `make backtest`, `make serve`.
 
 ---
 

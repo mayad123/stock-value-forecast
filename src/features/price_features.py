@@ -72,14 +72,34 @@ def get_feature_names(use_news: bool = False) -> List[str]:
 
 def load_raw_normalized(raw_root: Path, raw_dataset_version: str) -> pd.DataFrame:
     """
-    Load normalized price CSV for a raw dataset version.
+    Load normalized prices for a raw dataset version.
+    Uses manifest's normalized_paths: either ticker-level history files (incremental store)
+    or legacy single CSV at prices_normalized/{version}/prices.csv.
     Returns DataFrame sorted by (ticker, date). Validates time ordering (fails loudly on violation).
     """
-    csv_path = raw_root / "prices_normalized" / raw_dataset_version / "prices.csv"
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Normalized prices not found: {csv_path}")
+    manifest_path = raw_root / "manifests" / f"{raw_dataset_version}.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
 
-    df = pd.read_csv(csv_path)
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    normalized_paths = manifest.get("normalized_paths") or []
+
+    if not normalized_paths:
+        # Legacy: single versioned CSV
+        csv_path = raw_root / "prices_normalized" / raw_dataset_version / "prices.csv"
+        if not csv_path.exists():
+            raise FileNotFoundError(f"Normalized prices not found: {csv_path}")
+        paths_to_load = [csv_path]
+    else:
+        paths_to_load = [raw_root / p for p in normalized_paths]
+
+    dfs = []
+    for p in paths_to_load:
+        if not p.exists():
+            raise FileNotFoundError(f"Normalized price file not found: {p}")
+        dfs.append(pd.read_csv(p))
+    df = pd.concat(dfs, ignore_index=True)
     df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
     df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
     validate_time_ordering_raw(df)
@@ -161,21 +181,21 @@ def build_features(
 
 
 def resolve_raw_version(raw_root: Path, version_hint: str = "latest") -> str:
-    """Resolve raw dataset version: 'latest' -> most recent manifest, else use hint."""
+    """Resolve raw dataset version: 'latest' -> most recent price manifest, else use hint."""
     manifests_dir = raw_root / "manifests"
     if not manifests_dir.exists():
         raise FileNotFoundError(f"No manifests dir: {manifests_dir}")
 
     if version_hint != "latest":
         manifest_path = manifests_dir / f"{version_hint}.json"
-        if manifest_path.exists():
+        if manifest_path.exists() and not manifest_path.name.startswith("news_"):
             return version_hint
         raise FileNotFoundError(f"Raw dataset version not found: {version_hint}")
 
-    manifests = sorted(manifests_dir.glob("*.json"))
+    # Only price manifests (exclude news_*.json)
+    manifests = sorted(m for m in manifests_dir.glob("*.json") if not m.name.startswith("news_"))
     if not manifests:
-        raise FileNotFoundError(f"No manifests in {manifests_dir}")
-    # Version = filename without .json; sort lexicographically (timestamp format sorts correctly)
+        raise FileNotFoundError(f"No price manifests in {manifests_dir}")
     return manifests[-1].stem
 
 

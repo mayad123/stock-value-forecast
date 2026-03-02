@@ -1,12 +1,14 @@
 """
-Historical price ingestion: Alpha Vantage API -> raw JSON + normalized table + manifest.
-Raw responses are never overwritten; each run creates a new dataset version.
+Historical price ingestion: Alpha Vantage API -> raw JSON + incremental normalized store + manifest.
+Each run fetches TIME_SERIES_DAILY compact (~100 points) per ticker and merges into ticker-level
+history files (dedupe by date; newest value wins). The merged store is the canonical raw normalized
+dataset for downstream feature building; multiple runs grow history beyond 100 days without premium.
 """
 
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # Allow running from repo root
 import sys
@@ -16,10 +18,13 @@ if str(_REPO_ROOT) not in sys.path:
 
 from src.ingest.alphavantage import (
     AlphaVantageError,
-    fetch_daily_adjusted,
+    fetch_daily_raw,
     get_api_key,
     throttle_wait,
 )
+
+
+NORMALIZED_KEYS = ["ticker", "date", "open", "high", "low", "close", "adjusted_close", "volume"]
 
 
 def _datetime_to_version(ts: datetime) -> str:
@@ -30,7 +35,8 @@ def _datetime_to_version(ts: datetime) -> str:
 def _parse_time_series(raw: Dict[str, Any], ticker: str) -> List[Dict[str, Any]]:
     """
     Extract daily OHLCV from Alpha Vantage raw response.
-    Handles both TIME_SERIES_DAILY (5. volume) and TIME_SERIES_DAILY_ADJUSTED (5. adjusted close, 6. volume).
+    Handles TIME_SERIES_DAILY (1–5: open, high, low, close, volume) and, for legacy raw files,
+    TIME_SERIES_DAILY_ADJUSTED (5. adjusted close, 6. volume). For daily, adjusted_close = close.
     Returns list of dicts with keys: ticker, date, open, high, low, close, adjusted_close, volume.
     """
     series = raw.get("Time Series (Daily)")
@@ -64,16 +70,80 @@ def _parse_time_series(raw: Dict[str, Any], ticker: str) -> List[Dict[str, Any]]
     return rows
 
 
+def _read_normalized_csv(path: Path) -> List[Dict[str, Any]]:
+    """Read normalized price CSV into list of dicts (same keys as NORMALIZED_KEYS)."""
+    if not path.exists():
+        return []
+    rows = []
+    with open(path) as f:
+        header = f.readline().strip().split(",")
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            values = _parse_csv_line(line)
+            if len(values) >= len(NORMALIZED_KEYS):
+                rows.append(dict(zip(NORMALIZED_KEYS, values[: len(NORMALIZED_KEYS)])))
+    return rows
+
+
+def _parse_csv_line(line: str) -> List[Any]:
+    """Parse a single CSV line (handles quoted fields)."""
+    out = []
+    i = 0
+    while i < len(line):
+        if line[i] == '"':
+            i += 1
+            cell = []
+            while i < len(line):
+                if line[i] == '"':
+                    i += 1
+                    if i < len(line) and line[i] == '"':
+                        cell.append('"')
+                        i += 1
+                    else:
+                        break
+                else:
+                    cell.append(line[i])
+                    i += 1
+            out.append("".join(cell))
+        else:
+            start = i
+            while i < len(line) and line[i] != ",":
+                i += 1
+            out.append(line[start:i].strip())
+            i += 1
+    return out
+
+
+def _merge_ticker_history(
+    existing: List[Dict[str, Any]], new_rows: List[Dict[str, Any]], ticker: str
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    Merge new rows into existing (dedupe by date; keep most recent value per date).
+    Returns (merged_rows sorted by date, number of new dates appended).
+    """
+    by_date: Dict[str, Dict[str, Any]] = {}
+    for r in existing:
+        by_date[r["date"]] = dict(r)
+    existing_dates = set(by_date.keys())
+    for r in new_rows:
+        by_date[r["date"]] = dict(r)
+    new_dates_appended = len(set(r["date"] for r in new_rows) - existing_dates)
+    merged = sorted(by_date.values(), key=lambda x: x["date"])
+    return merged, new_dates_appended
+
+
 def run_ingest_prices(
     config: Dict[str, Any],
     data_raw_root: Optional[Path] = None,
     log: Optional[Any] = None,
 ) -> str:
     """
-    Ingest daily OHLCV for all configured tickers via Alpha Vantage.
+    Ingest daily OHLCV for all configured tickers via Alpha Vantage (compact only).
     - Saves raw API responses under data/raw/prices/{ticker}/{ingestion_timestamp}.json
-    - Saves normalized table under data/raw/prices_normalized/{dataset_version}/
-    - Saves manifest under data/raw/manifests/{dataset_version}.json
+    - Merges normalized rows into ticker-level history under data/raw/prices_normalized/{ticker}.csv
+    - Saves manifest under data/raw/manifests/{dataset_version}.json with ticker_histories (status, new_rows)
     Returns dataset_version (ingestion timestamp string).
     """
     if log is None:
@@ -93,9 +163,8 @@ def run_ingest_prices(
     ingestion_time = datetime.utcnow()
     dataset_version = _datetime_to_version(ingestion_time)
 
-    # Paths for this run (never overwrite existing raw files)
     raw_prices_dir = raw_root / "prices"
-    normalized_dir = raw_root / "prices_normalized" / dataset_version
+    normalized_dir = raw_root / "prices_normalized"
     manifests_dir = raw_root / "manifests"
     raw_prices_dir.mkdir(parents=True, exist_ok=True)
     manifests_dir.mkdir(parents=True, exist_ok=True)
@@ -103,10 +172,11 @@ def run_ingest_prices(
 
     log(f"Dataset version: {dataset_version}")
     log(f"Tickers: {len(tickers)}")
-    api_endpoint = "https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED"
+    api_endpoint = "https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&outputsize=compact"
 
     raw_paths: List[str] = []
-    all_rows: List[Dict[str, Any]] = []
+    ticker_histories: List[Dict[str, Any]] = []
+    all_dates: List[str] = []
 
     for i, symbol in enumerate(tickers):
         ticker_dir = raw_prices_dir / symbol
@@ -120,45 +190,32 @@ def run_ingest_prices(
         else:
             throttle_wait()
             log(f"Fetching {symbol} ({i + 1}/{len(tickers)})")
-            raw = fetch_daily_adjusted(symbol, api_key, outputsize="full")
+            raw = fetch_daily_raw(symbol, api_key)
             with open(raw_path, "w") as f:
                 json.dump(raw, f, indent=2)
 
         raw_paths.append(str(raw_path.relative_to(raw_root)))
-        rows = _parse_time_series(raw, symbol)
-        all_rows.extend(rows)
-        log(f"  {symbol}: {len(rows)} daily bars")
+        new_rows = _parse_time_series(raw, symbol)
+        log(f"  {symbol}: {len(new_rows)} daily bars from API")
 
-    # Optional: filter by config date range
-    time_horizon = config.get("time_horizon", {})
-    ingest_start = time_horizon.get("ingest_start")
-    ingest_end = time_horizon.get("train_end") or time_horizon.get("test_start")
-    if ingest_start or ingest_end:
-        filtered = []
-        for r in all_rows:
-            d = r["date"]
-            if ingest_start and d < ingest_start:
-                continue
-            if ingest_end and d > ingest_end:
-                continue
-            filtered.append(r)
-        all_rows = filtered
-        log(f"Filtered by date range: {len(all_rows)} rows")
+        history_path = normalized_dir / f"{symbol}.csv"
+        existing = _read_normalized_csv(history_path)
+        merged, new_rows_appended = _merge_ticker_history(existing, new_rows, symbol)
+        status = "created" if not existing else "updated"
+        _write_normalized_csv(merged, history_path)
 
-    # Sort by date for stable output
-    all_rows.sort(key=lambda r: (r["ticker"], r["date"]))
+        rel_path = str(history_path.relative_to(raw_root))
+        ticker_histories.append({
+            "ticker": symbol,
+            "path": rel_path,
+            "status": status,
+            "new_rows": new_rows_appended,
+            "total_rows": len(merged),
+        })
+        all_dates.extend(r["date"] for r in merged)
 
-    # Save normalized (CSV for minimal deps; Parquet optional later)
-    normalized_file = normalized_dir / "prices.csv"
-    if all_rows:
-        _write_normalized_csv(all_rows, normalized_file)
-    normalized_paths = [str(normalized_file.relative_to(raw_root))] if all_rows else []
-
-    date_range = (
-        {"min": min(r["date"] for r in all_rows), "max": max(r["date"] for r in all_rows)}
-        if all_rows
-        else {}
-    )
+    normalized_paths = [h["path"] for h in ticker_histories]
+    date_range = {"min": min(all_dates), "max": max(all_dates)} if all_dates else {}
 
     manifest = {
         "dataset_version": dataset_version,
@@ -168,13 +225,33 @@ def run_ingest_prices(
         "date_range": date_range,
         "raw_paths": raw_paths,
         "normalized_paths": normalized_paths,
+        "ticker_histories": ticker_histories,
     }
+
+    # Optional enrichment (additive; not required for training)
+    enrichment_cfg = config.get("enrichment") or {}
+    if (
+        enrichment_cfg.get("symbol_search")
+        or enrichment_cfg.get("global_quote")
+        or enrichment_cfg.get("weekly_monthly")
+    ):
+        try:
+            from src.ingest.enrichment import run_enrichment
+            enrichment_manifest = run_enrichment(
+                config, raw_root, dataset_version, api_key, tickers, log=log
+            )
+            manifest.update(enrichment_manifest)
+        except AlphaVantageError as e:
+            log(f"Enrichment failed (non-fatal): {e}")
+            manifest["enrichment"] = {"enrichment_error": str(e)}
+
     manifest_path = manifests_dir / f"{dataset_version}.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
     log(f"Manifest: {manifest_path}")
-    log(f"Normalized: {normalized_dir}")
+    for h in ticker_histories:
+        log(f"  {h['ticker']}: {h['status']}, +{h['new_rows']} rows, total {h['total_rows']}")
     return dataset_version
 
 
@@ -182,11 +259,10 @@ def _write_normalized_csv(rows: List[Dict[str, Any]], path: Path) -> None:
     """Write normalized rows to CSV (no pandas required)."""
     if not rows:
         return
-    keys = ["ticker", "date", "open", "high", "low", "close", "adjusted_close", "volume"]
     with open(path, "w") as f:
-        f.write(",".join(keys) + "\n")
+        f.write(",".join(NORMALIZED_KEYS) + "\n")
         for r in rows:
-            line = ",".join(_csv_cell(r.get(k)) for k in keys)
+            line = ",".join(_csv_cell(r.get(k)) for k in NORMALIZED_KEYS)
             f.write(line + "\n")
 
 
