@@ -21,12 +21,15 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     if not path.is_absolute():
         path = _REPO_ROOT / path
     if not path.exists():
+        print(f"Warning: config not found at {path}, using defaults (no mode set).", file=sys.stderr)
         return _default_config()
     try:
         import yaml
         with open(path) as f:
-            return yaml.safe_load(f) or _default_config()
-    except Exception:
+            out = yaml.safe_load(f) or _default_config()
+            return out
+    except Exception as e:
+        print(f"Warning: could not load config from {path}: {e}", file=sys.stderr)
         return _default_config()
 
 
