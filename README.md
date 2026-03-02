@@ -1,5 +1,79 @@
 # Stock Value Forecast
 
+Machine-learning portfolio project demonstrating a small but production-shaped time-series forecasting pipeline: ingest → features → train → backtest → serve → UI.
+
+---
+
+## Live demo
+
+**Streamlit UI (no setup required):**  
+[https://stock-value-forecast-qneqzw3kpe5d69gjxmmete.streamlit.app/](https://stock-value-forecast-qneqzw3kpe5d69gjxmmete.streamlit.app/)
+
+What you can see there:
+- **Model Overview:** current trained run (version, dataset, feature schema fingerprint, metrics, baseline vs model comparison).
+- **Prediction Explorer:** single-ticker predictions driven by the same features used at train time.
+- **Fold Stability:** walk-forward folds with per-fold metrics and variability plots.
+
+This is the best entry point for recruiters and hiring managers; you can get a feel for the system in under a minute.
+
+---
+
+## Architecture at a glance
+
+End-to-end flow:
+
+```text
+AlphaVantage / sample CSVs
+        │
+        ▼
+  Ingest (optional live mode)
+        │
+        ▼
+  Feature build (price features, leakage checks)
+        │
+        ▼
+  Train (TF/Keras model, run record)
+        │
+        ▼
+  Backtest (baselines + model, metrics + reports)
+        │
+        ▼
+  Serve API (FastAPI, /predict, /model_info)
+        │
+        ▼
+  Streamlit UI (this repo’s frontend/)
+```
+
+Key pieces:
+- **Data & features**
+  - Time-series split with **strict time ordering** and **leakage guards** (e.g., no future prices or news in features).
+  - Feature manifests and versioned processed datasets under `data/processed/<version>/`.
+- **Training & evaluation**
+  - Keras model trained on engineered features, with train/val split, saved as `model.keras`.
+  - Run record (`run_record.json`) captures config hash, git commit, feature columns, scaler stats, and metrics.
+  - Backtest writes human-readable and JSON reports, plus optional walk-forward (fold-based) evaluation.
+- **Serving & UI**
+  - FastAPI app (`src/serve/app.py`) exposes `/health`, `/predict`, `/model_info` on port **8000**.
+  - Streamlit frontend (`frontend/app.py`) consumes the API and `reports/latest_metrics.json` for a recruiter-friendly view.
+
+---
+
+## What this demonstrates for an ML engineer role
+
+- **Production-shaped pipeline:** clear stages (ingest, features, train, backtest, serve), each with its own module and CLI entry point.
+- **Time-series correctness:** explicit checks for time ordering and label leakage, enforced via unit tests.
+- **Reproducibility & auditability:** every training run writes a self-describing artifact directory (config hash, git commit, metrics, schema).
+- **Evaluation rigor:** baselines vs model, single-window and walk-forward backtests, plus fold stability visualizations.
+- **Serving & UX:** FastAPI backend and a small, focused Streamlit UI, wired together with environment-based configuration and a `make dev` workflow.
+
+If you’d like to see code or tests for any of these pieces during an interview, the fastest starting points are:
+- `src/train/train.py` – training routine and run record.
+- `src/eval/backtest.py` and `src/eval/walk_forward.py` – metrics and fold construction.
+- `src/serve/app.py` – serving contract.
+- `frontend/app.py` – UI that exercises the model and evaluation artifacts.
+
+# Stock Value Forecast
+
 **ML portfolio project** — End-to-end system for forecasting short-horizon stock trend direction from price and optional news data.
 
 ---
