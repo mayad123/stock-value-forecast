@@ -6,14 +6,16 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-import sys
-sys.path.insert(0, str(REPO_ROOT))
 
-from src.data.manifest import generate_manifest, _scan_csv_dates
+@pytest.fixture(scope="module")
+def manifest_module():
+    """Import after conftest has set sys.path (avoids collection-time ModuleNotFoundError in CI)."""
+    from src.data.manifest import generate_manifest, _scan_csv_dates
+    return generate_manifest, _scan_csv_dates
 
 
-def test_scan_csv_dates():
+def test_scan_csv_dates(manifest_module):
+    generate_manifest, _scan_csv_dates = manifest_module
     with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
         f.write("ticker,date,open,high,low,close,adjusted_close,volume\n")
         f.write("AAPL,2024-01-02,1,1,1,1,1,1\n")
@@ -29,7 +31,8 @@ def test_scan_csv_dates():
         path.unlink(missing_ok=True)
 
 
-def test_generate_manifest_includes_all_csvs_and_date_range():
+def test_generate_manifest_includes_all_csvs_and_date_range(manifest_module):
+    generate_manifest, _ = manifest_module
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         (tmp / "prices_normalized").mkdir()
@@ -54,7 +57,8 @@ def test_generate_manifest_includes_all_csvs_and_date_range():
             assert (tmp / p).exists()
 
 
-def test_generate_manifest_fails_no_csvs():
+def test_generate_manifest_fails_no_csvs(manifest_module):
+    generate_manifest, _ = manifest_module
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         (tmp / "prices_normalized").mkdir()

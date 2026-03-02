@@ -10,7 +10,7 @@ import json
 import random
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -142,7 +142,7 @@ def run_training(
     random_seeds = {"numpy": seed, "tensorflow": seed, "python": seed}
 
     model = build_model(
-        n_features=n_features,
+        n_features=len(feature_cols),
         units=16,
         dropout_rate=0.3,
         learning_rate=learning_rate,
