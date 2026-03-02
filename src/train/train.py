@@ -1,16 +1,19 @@
 """
 Training routine: load processed data, train on train partition, evaluate on validation,
-produce SavedModel artifact and run record (config, manifest refs, split boundaries, metrics).
+produce SavedModel artifact and run record (config hash, git commit, seeds, schema, metrics).
+Every run dir contains run_record.json, model artifact, and metrics_summary.json for audit.
 """
 
 import json
+import random
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import tensorflow as tf
 
+from src._cli import config_hash_from_dict, config_hash_from_file, get_git_commit
 from src.eval.metrics import compute_metrics
 from src.features.price_features import FEATURE_NAMES
 from src.train.data import load_feature_manifest, load_train_val, resolve_processed_version, get_X_y
@@ -45,6 +48,17 @@ def run_training(
     models_path = models_root or (repo_root / paths_cfg.get("models", "models"))
     if not models_path.is_absolute():
         models_path = repo_root / models_path
+
+    # Self-describing artifact: config hash (exact YAML when path available) and git commit
+    config_path_str = config.get("_config_path")
+    if config_path_str and Path(config_path_str).exists():
+        try:
+            config_hash = config_hash_from_file(Path(config_path_str))
+        except Exception:
+            config_hash = config_hash_from_dict(config)
+    else:
+        config_hash = config_hash_from_dict(config)
+    git_commit_hash = get_git_commit(repo_root)
 
     dataset_version = resolve_processed_version(processed_path, dataset_version_hint)
     log(f"Processed dataset version: {dataset_version}")
@@ -86,6 +100,11 @@ def run_training(
     batch_size = int(hp.get("batch_size", 32))
     learning_rate = float(hp.get("learning_rate", 0.001))
     patience = int(hp.get("early_stopping_patience", 10))
+    seed = int(hp.get("seed", 42))
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+    random.seed(seed)
+    random_seeds = {"numpy": seed, "tensorflow": seed, "python": seed}
 
     model = build_model(
         n_features=n_features,
@@ -146,11 +165,17 @@ def run_training(
     model.save(saved_model_path)
     log(f"Saved model: {saved_model_path}")
 
-    # Run record: config, dataset refs, split boundaries, metrics, scaler params
+    # Run record: config hash, git commit, seeds, schema, dataset refs, metrics, scaler
     feature_manifest = load_feature_manifest(processed_path, dataset_version)
     split_boundaries = feature_manifest.get("split_boundaries") or config.get("time_horizon", {})
+    model_input_shape: List[Optional[int]] = [int(s) if s is not None else None for s in model.input_shape]
     run_record = {
         "run_id": run_id,
+        "config_hash": config_hash,
+        "config_path": config_path_str,
+        "git_commit_hash": git_commit_hash,
+        "random_seeds": random_seeds,
+        "model_input_shape": model_input_shape,
         "config": {
             "training": hp,
             "time_horizon": config.get("time_horizon", {}),
@@ -175,5 +200,23 @@ def run_training(
     with open(record_path, "w") as f:
         json.dump(run_record, f, indent=2)
     log(f"Run record: {record_path}")
+
+    # Metrics summary in run dir so reviewer can open one folder and see what was achieved
+    metrics_summary = {
+        "run_id": run_id,
+        "config_hash": config_hash,
+        "git_commit_hash": git_commit_hash,
+        "dataset_version": dataset_version,
+        "feature_columns": feature_cols,
+        "model_input_shape": model_input_shape,
+        "split_boundaries": split_boundaries,
+        "train_metrics": train_metrics,
+        "val_metrics_keras": val_metrics_keras,
+        "val_metrics": val_metrics_shared,
+    }
+    metrics_path = out_dir / "metrics_summary.json"
+    with open(metrics_path, "w") as f:
+        json.dump(metrics_summary, f, indent=2)
+    log(f"Metrics summary: {metrics_path}")
 
     return run_id

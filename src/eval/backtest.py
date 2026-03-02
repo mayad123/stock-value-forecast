@@ -124,6 +124,8 @@ def _write_latest_outputs(
             "test_start": setup.get("test_start"),
             "n_test": None,
             "models": agg,
+            "folds": data.get("folds", []),
+            "aggregate": data.get("aggregate", {}),
         }
         with open(latest_json, "w") as f:
             json.dump(latest_summary, f, indent=2)
@@ -168,9 +170,12 @@ def run_backtest(
         log("No test rows; skipping backtest")
         return {"dataset_version": dataset_version, "models": {}}
 
-    wf = (config.get("eval") or {}).get("walk_forward") or {}
-    if wf.get("window_days") and wf.get("step_days"):
-        # Walk-forward: iterate windows, save artifact, generate report
+    eval_cfg = config.get("eval") or {}
+    wf = eval_cfg.get("walk_forward") or {}
+    fold_size = eval_cfg.get("fold_size_days") or wf.get("window_days")
+    step_size = eval_cfg.get("step_size_days") or wf.get("step_days")
+    if fold_size and step_size:
+        # Walk-forward: iterate folds, save artifact, generate report
         from src.eval.walk_forward import run_walk_forward
         from src.eval.report import generate_report
         feature_manifest = _load_feature_manifest(processed_path, dataset_version)

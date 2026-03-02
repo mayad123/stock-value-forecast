@@ -70,6 +70,7 @@ def test_run_training_produces_artifact():
         run_dir = models / run_id
         assert (run_dir / "model.keras").exists()
         assert (run_dir / "run_record.json").exists()
+        assert (run_dir / "metrics_summary.json").exists()
 
         record = load_run_record(run_dir)
         assert record["run_id"] == run_id
@@ -83,6 +84,21 @@ def test_run_training_produces_artifact():
         assert "scaler" in record and "mean" in record["scaler"] and "scale" in record["scaler"]
         assert "feature_columns" in record
         assert "mse" in record["val_metrics"] and "directional_accuracy" in record["val_metrics"]
+        # Self-describing artifact: reviewer can identify config, data, schema, metrics
+        assert "config_hash" in record
+        assert isinstance(record["config_hash"], str) and len(record["config_hash"]) == 64
+        assert "git_commit_hash" in record  # may be None if not a git repo
+        assert "random_seeds" in record
+        assert record["random_seeds"].get("numpy") == record["random_seeds"].get("tensorflow") == 42
+        assert "model_input_shape" in record
+        assert record["model_input_shape"] == [None, len(record["feature_columns"])]
+
+        summary = json.loads((run_dir / "metrics_summary.json").read_text())
+        assert summary["run_id"] == run_id
+        assert summary["config_hash"] == record["config_hash"]
+        assert summary["dataset_version"] == "v1"
+        assert summary["feature_columns"] == record["feature_columns"]
+        assert "train_metrics" in summary and "val_metrics" in summary
 
 
 def test_loaded_model_evaluates_with_same_metrics():

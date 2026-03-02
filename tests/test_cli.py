@@ -157,3 +157,43 @@ def test_live_mode_build_features_fails_clearly_when_data_missing():
         with pytest.raises(FileNotFoundError) as exc_info:
             run_build_features(config, raw_root=raw_root)
     assert "Live mode" in str(exc_info.value) or "Run ingest" in str(exc_info.value)
+
+
+def test_config_hash_from_dict_stable():
+    """Config hash from dict is deterministic and excludes _config_path."""
+    from src._cli import config_hash_from_dict
+
+    cfg = {"a": 1, "b": 2, "training": {"epochs": 3}}
+    h1 = config_hash_from_dict(cfg)
+    h2 = config_hash_from_dict(cfg)
+    assert h1 == h2
+    assert len(h1) == 64
+    assert all(c in "0123456789abcdef" for c in h1)
+
+    cfg["_config_path"] = "/some/path.yaml"
+    h3 = config_hash_from_dict(cfg)
+    assert h3 == h1  # internal key excluded from hash
+
+
+def test_config_hash_from_file():
+    """Config hash from file hashes exact file content."""
+    from src._cli import config_hash_from_file
+
+    path = REPO_ROOT / "configs" / "recruiter_demo.yaml"
+    if not path.exists():
+        pytest.skip("configs/recruiter_demo.yaml not found")
+    h = config_hash_from_file(path)
+    assert len(h) == 64
+    assert all(c in "0123456789abcdef" for c in h)
+
+
+def test_get_git_commit():
+    """Git commit returns hex hash or None."""
+    from src._cli import get_git_commit
+
+    out = get_git_commit(REPO_ROOT)
+    if out is not None:
+        assert len(out) >= 7
+        assert all(c in "0123456789abcdef" for c in out)
+    # Call with nonexistent dir: should not raise, return None
+    assert get_git_commit(Path("/nonexistent_repo_xyz")) is None

@@ -3,6 +3,7 @@ Generate human-readable backtest reports. Single-window and walk-forward artifac
 Deterministic: same artifact -> same report.
 """
 
+import math
 from pathlib import Path
 from typing import Any, Dict, Union
 
@@ -80,7 +81,9 @@ def generate_report(
 
     setup = data.get("setup", {})
     windows = data.get("windows", [])
+    folds = data.get("folds", []) or windows  # fallback to windows for legacy
     agg = data.get("aggregated_metrics", {})
+    agg_mean_std = data.get("aggregate", {})
 
     lines = [
         "# Backtest Report",
@@ -92,27 +95,61 @@ def generate_report(
         f"- **Train end:** {setup.get('train_end', '—')}",
         f"- **Val window:** {setup.get('val_start', '—')} .. {setup.get('val_end', '—')}",
         f"- **Test start:** {setup.get('test_start', '—')}",
-        f"- **Walk-forward:** window={setup.get('window_days', '—')} days, step={setup.get('step_days', '—')} days",
-        f"- **Windows:** {setup.get('n_windows', 0)}",
+        f"- **Folds:** min_train_days={setup.get('min_train_days', '—')}, fold_size={setup.get('fold_size_days', setup.get('window_days', '—'))} days, step={setup.get('step_size_days', setup.get('step_days', '—'))} days",
+        f"- **Number of folds:** {len(folds)}",
         "",
-        "## 2. Baseline comparisons (aggregated)",
-        "",
-        "| Model | MSE | RMSE | MAE | R² | Dir. accuracy |",
-        "|-------|-----|------|-----|-----|----------------|",
     ]
 
+    # 2. Fold ranges (train/test dates per fold)
+    lines.extend(["## 2. Fold ranges (train / test dates)", ""])
+    if not folds:
+        lines.append("No fold data.")
+    else:
+        lines.append("| Fold | Train start | Train end | Test start | Test end | n_samples |")
+        lines.append("|------|-------------|-----------|------------|----------|-----------|")
+        for f in folds:
+            tid = f.get("fold_id", 0)
+            ts = f.get("train_start", f.get("window_start", "—"))
+            te = f.get("train_end", "—")
+            if te == "—" and "window_start" in f:
+                te = f.get("window_start", "—")
+            tst_s = f.get("test_start", f.get("window_start", "—"))
+            tst_e = f.get("test_end", f.get("window_end", "—"))
+            n = f.get("n_samples", 0)
+            lines.append(f"| {tid} | {ts} | {te} | {tst_s} | {tst_e} | {n} |")
+    lines.extend(["", "## 3. Aggregate comparisons (mean ± std across folds)", ""])
+
+    if agg_mean_std:
+        def _fmt_mean_std(d: Dict[str, Any]) -> str:
+            if not d:
+                return "—"
+            m, s = d.get("mean"), d.get("std")
+            if m is None or (isinstance(m, float) and math.isnan(m)):
+                return "—"
+            if s is None or s == 0 or (isinstance(s, float) and math.isnan(s)):
+                return str(m)
+            return f"{m} ± {s}"
+
+        lines.append("| Model | MSE | RMSE | MAE | R² | Dir. accuracy |")
+        lines.append("|-------|-----|------|-----|-----|----------------|")
+        for name in ["naive", "heuristic", "simple_ml", "tensorflow"]:
+            row = agg_mean_std.get(name) or {}
+            lines.append(
+                f"| {name} | {_fmt_mean_std(row.get('mse'))} | {_fmt_mean_std(row.get('rmse'))} | {_fmt_mean_std(row.get('mae'))} | "
+                f"{_fmt_mean_std(row.get('r2'))} | {_fmt_mean_std(row.get('directional_accuracy'))} |"
+            )
+    else:
+        lines.append("(No aggregate mean/std; using pooled metrics below.)")
+    lines.extend(["", "## 4. Pooled metrics (all folds concatenated)", ""])
+    lines.append("| Model | MSE | RMSE | MAE | R² | Dir. accuracy |")
+    lines.append("|-------|-----|------|-----|-----|----------------|")
     for name in ["naive", "heuristic", "simple_ml"]:
         m = agg.get(name)
         if m:
             lines.append(f"| {name} | {m.get('mse', '—')} | {m.get('rmse', '—')} | {m.get('mae', '—')} | {m.get('r2', '—')} | {m.get('directional_accuracy', '—')} |")
         else:
             lines.append(f"| {name} | — | — | — | — | — |")
-
-    lines.extend([
-        "",
-        "## 3. TensorFlow model performance",
-        "",
-    ])
+    lines.extend(["", "## 5. TensorFlow model performance (pooled)", ""])
     tf_m = agg.get("tensorflow")
     if tf_m:
         lines.append(f"- **MSE:** {tf_m.get('mse', '—')}")
@@ -125,19 +162,15 @@ def generate_report(
         lines.append("No TensorFlow model metrics (model not run or not available).")
     lines.append("")
 
-    lines.extend([
-        "## 4. Error analysis",
-        "",
-    ])
+    lines.extend(["## 6. Error analysis", ""])
     if not windows:
         lines.append("No per-window data.")
     else:
-        # Worst windows by MSE (across models)
         worst = []
         for i, w in enumerate(windows):
             for model_name, m in (w.get("metrics") or {}).items():
                 if m and "mse" in m:
-                    worst.append((i, w["window_start"], w["window_end"], model_name, m["mse"], m.get("directional_accuracy")))
+                    worst.append((i, w.get("window_start", ""), w.get("window_end", ""), model_name, m["mse"], m.get("directional_accuracy")))
         worst.sort(key=lambda x: x[4], reverse=True)
         lines.append("**Worst windows by MSE (top 5):**")
         lines.append("")

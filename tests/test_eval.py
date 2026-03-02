@@ -217,7 +217,6 @@ def test_backtest_overwrites_latest_preserves_versioned():
         latest_json = reports / "latest_metrics.json"
         latest_md = reports / "latest_backtest.md"
         first_json = json.loads(latest_json.read_text())
-        first_md = latest_md.read_text()
         run_backtest(config, processed_root=processed, dataset_version_hint="v1")
         second_json = json.loads(latest_json.read_text())
         second_md = latest_md.read_text()
@@ -226,6 +225,46 @@ def test_backtest_overwrites_latest_preserves_versioned():
         assert (reports / v / "metrics_summary.json").exists()
         assert (reports / v / "backtest_report.md").exists()
         assert "Notes" in second_md
+
+
+def test_backtest_walk_forward_produces_at_least_two_folds_and_latest_has_folds_aggregate():
+    """Backtest on sample data with eval fold/step produces >= 2 folds; latest_metrics.json has folds and aggregate."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        processed = tmp / "processed"
+        reports = tmp / "reports"
+        models = tmp / "models"
+        reports.mkdir(parents=True)
+        models.mkdir(parents=True)
+        v = "demo"
+        (processed / v).mkdir(parents=True)
+        rows = [
+            "ticker,date,split,return_1d,return_5d,return_21d,volatility_5d,volatility_21d,range_hl,volume_pct_1d,target_forward_return",
+            "AAPL,2024-01-11,train,0.01,0.02,0.03,0.01,0.01,0.01,0.0,0.01",
+            "AAPL,2024-01-12,train,0.0,0.01,0.02,0.01,0.01,0.01,0.0,0.0",
+        ]
+        # Enough train dates and test dates for 2+ folds (fold_size=5, step=5)
+        for i in range(12):
+            rows.append(f"AAPL,2024-01-{13+i:02d},train,0.0,0.01,0.02,0.01,0.01,0.01,0.0,0.0")
+        for i in range(15):
+            rows.append(f"AAPL,2024-02-{1+i:02d},test,0.0,0.01,0.0,0.01,0.01,0.01,0.0,0.001")
+        (processed / v / "features.csv").write_text("\n".join(rows))
+        config = {
+            "paths": {"data_processed": str(processed), "reports": str(reports), "models": str(models)},
+            "time_horizon": {"train_end": "2024-01-24", "val_start": "2024-01-25", "val_end": "2024-01-26", "test_start": "2024-02-01"},
+            "eval": {"min_train_days": 5, "fold_size_days": 5, "step_size_days": 5},
+        }
+        result = run_backtest(config, processed_root=processed, dataset_version_hint=v)
+        assert "folds" in result
+        assert len(result["folds"]) >= 2
+        assert "aggregate" in result
+        assert "naive" in result["aggregate"]
+        latest_json = reports / "latest_metrics.json"
+        assert latest_json.exists()
+        latest = json.loads(latest_json.read_text())
+        assert "folds" in latest
+        assert "aggregate" in latest
+        assert len(latest["folds"]) >= 2
 
 
 def test_resolve_processed_version_latest():

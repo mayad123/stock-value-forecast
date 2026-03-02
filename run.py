@@ -89,7 +89,9 @@ def main() -> None:
 
     # Workflows: fix config by mode to prevent cross-mode
     if stage == "demo":
-        config = load_config(str(REPO_ROOT / DEMO_CONFIG))
+        demo_path = REPO_ROOT / DEMO_CONFIG
+        config = load_config(str(demo_path))
+        config["_config_path"] = str(demo_path.resolve())
         if config.get("mode") != "recruiter_demo":
             print("Error: demo must use config with mode: recruiter_demo", file=sys.stderr)
             sys.exit(1)
@@ -100,7 +102,9 @@ def main() -> None:
         return
 
     if stage == "live":
-        config = load_config(str(REPO_ROOT / LIVE_CONFIG))
+        live_path = REPO_ROOT / LIVE_CONFIG
+        config = load_config(str(live_path))
+        config["_config_path"] = str(live_path.resolve())
         if config.get("mode") != "live_apis":
             print("Error: live must use config with mode: live_apis", file=sys.stderr)
             sys.exit(1)
@@ -117,8 +121,11 @@ def main() -> None:
         if not config_path.is_absolute():
             config_path = REPO_ROOT / config_path
         config = load_config(str(config_path))
+        config["_config_path"] = str(config_path.resolve())
     else:
-        config = load_config(str(REPO_ROOT / DEMO_CONFIG))
+        default_path = REPO_ROOT / DEMO_CONFIG
+        config = load_config(str(default_path))
+        config["_config_path"] = str(default_path.resolve())
 
     if config.get("mode") == "live_apis":
         require_live_apis_keys(config)

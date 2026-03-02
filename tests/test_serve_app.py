@@ -89,6 +89,9 @@ def test_model_info(serve_client):
     data = r.json()
     assert data["model_version"] == "test_serve_run"
     assert data["dataset_version"] == "v1"
+    assert data["num_features"] == 7
+    assert "feature_schema_fingerprint" in data
+    assert len(data["feature_schema_fingerprint"]) == 16
     assert "training_window" in data
     assert data["feature_columns"] == [
         "return_1d", "return_5d", "return_21d",
@@ -107,6 +110,7 @@ def test_predict(serve_client):
     assert "confidence" in data
     assert data["ticker"] == "AAPL"
     assert data["as_of"] == "2024-01-25"  # latest date <= as_of
+    assert data.get("model_version") == "test_serve_run"
     assert 0 <= data["confidence"] <= 1
     assert -1 <= data["prediction"] <= 1
 
@@ -125,3 +129,76 @@ def test_predict_404_when_no_features(serve_client):
         json={"ticker": "UNKNOWN", "as_of": "2020-01-01", "horizon": 1},
     )
     assert r.status_code == 404
+
+
+def test_predict_400_when_features_missing_or_extra(serve_client):
+    """Request with missing or extra features returns 400 with expected vs received."""
+    # Missing feature
+    r = serve_client.post(
+        "/predict",
+        json={
+            "ticker": "AAPL",
+            "as_of": "2024-01-26",
+            "features": {
+                "return_1d": 0.01,
+                "return_5d": 0.02,
+                "return_21d": 0.03,
+                "volatility_5d": 0.01,
+                "volatility_21d": 0.01,
+                "range_hl": 0.01,
+            },
+        },
+    )
+    assert r.status_code == 400
+    data = r.json()
+    assert "detail" in data
+    assert "expected vs received" in data["detail"].lower() or "expected" in data["detail"].lower()
+    assert "missing" in data["detail"].lower()
+
+    # Extra feature
+    r = serve_client.post(
+        "/predict",
+        json={
+            "ticker": "AAPL",
+            "as_of": "2024-01-26",
+            "features": {
+                "return_1d": 0.01,
+                "return_5d": 0.02,
+                "return_21d": 0.03,
+                "volatility_5d": 0.01,
+                "volatility_21d": 0.01,
+                "range_hl": 0.01,
+                "volume_pct_1d": 0.0,
+                "extra_col": 1.0,
+            },
+        },
+    )
+    assert r.status_code == 400
+    data = r.json()
+    assert "detail" in data
+    assert "extra" in data["detail"].lower()
+
+
+def test_predict_200_with_valid_features_mapping(serve_client):
+    """Valid request with features dict returns 200 and includes model_version."""
+    r = serve_client.post(
+        "/predict",
+        json={
+            "ticker": "AAPL",
+            "as_of": "2024-01-26",
+            "features": {
+                "return_1d": 0.01,
+                "return_5d": 0.02,
+                "return_21d": 0.03,
+                "volatility_5d": 0.01,
+                "volatility_21d": 0.01,
+                "range_hl": 0.01,
+                "volume_pct_1d": 0.0,
+            },
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert "prediction" in data
+    assert data.get("model_version") == "test_serve_run"
+    assert -1 <= data["prediction"] <= 1

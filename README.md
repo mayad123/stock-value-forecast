@@ -4,6 +4,157 @@
 
 ---
 
+## Recruiter Quickstart (No API Keys)
+
+**Demo mode is the default path.** No API keys or `.env` required. Run the full pipeline on bundled sample data in under a minute.
+
+**1. Setup (one-time)**
+
+```bash
+git clone <repo-url>
+cd stock-value-forecast
+python3 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**2. Run the demo**
+
+```bash
+make demo
+```
+
+Or directly:
+
+```bash
+python run.py demo
+```
+
+This runs **build-features → train → backtest** using `data/sample/` (config: `configs/recruiter_demo.yaml`).
+
+**3. Expected outputs**
+
+| What | Path |
+|------|------|
+| **Backtest report (human-readable)** | `reports/latest_backtest.md` |
+| **Backtest metrics (JSON)** | `reports/latest_metrics.json` |
+| **Model artifact** | `models/<run_id>/` (e.g. `models/demo_20240301T120000Z/`) |
+| **Processed features** | `data/processed/demo/` |
+
+Versioned copies also exist under `reports/demo/` (e.g. `reports/demo/backtest_report.md`, `reports/demo/metrics_summary.json`). Each model run directory contains `run_record.json`, `model.keras`, and `metrics_summary.json` for audit.
+
+---
+
+## Evaluation
+
+After running the demo (or any backtest), open:
+
+- **`reports/latest_backtest.md`** — Human-readable backtest summary (metrics, model vs baselines).
+- **`reports/latest_metrics.json`** — Machine-readable metrics (MSE, MAE, directional accuracy, etc.).
+
+These files are overwritten each time you run `python run.py backtest` (or `make demo`). Versioned outputs for a given dataset stay under `reports/<dataset_version>/`.
+
+---
+
+## API Demo
+
+After you have a trained model (e.g. from the demo), you can start the prediction API and call it locally.
+
+**1. Start the service**
+
+From the repo root with your venv activated:
+
+```bash
+python run.py serve
+```
+
+Or:
+
+```bash
+make serve
+```
+
+The API listens at **http://127.0.0.1:8000**. It loads the latest model from `models/` (or use env `MODEL_RUN_ID` to pick a specific run).
+
+**2. Example requests**
+
+**Health check**
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Example response: `{"status":"ok"}`
+
+**Model info** (version, dataset, feature schema)
+
+```bash
+curl http://127.0.0.1:8000/model_info
+```
+
+Example response: `{"model_version":"demo_20240301T120000Z","dataset_version":"demo","num_features":8,"feature_columns":[...],"training_window":{...},...}`
+
+**Predict** (ticker + as-of date; features are looked up from processed data)
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"ticker": "AAPL", "as_of": "2024-01-26", "horizon": 1}'
+```
+
+Example response: `{"prediction": 0.12, "confidence": 0.8, "ticker": "AAPL", "as_of": "2024-01-26", "horizon": 1, "model_version": "demo_20240301T120000Z"}`
+
+---
+
+## Live APIs Mode (Optional)
+
+To use **real market data** instead of the bundled sample, use **live mode**. This is optional; demo mode is sufficient for understanding and evaluating the pipeline.
+
+**Required environment variables**
+
+| Variable | Required for | How to get |
+|----------|---------------|------------|
+| `ALPHAVANTAGE_API_KEY` | Price ingest | [Alpha Vantage](https://www.alphavantage.co/support/#api-key) (free tier) |
+| `MARKETAUX_API_KEY` | News ingest (only if `use_news: true`) | [Marketaux](https://www.marketaux.com/register) |
+
+Create a `.env` file in the repo root (or copy `.env.example`):
+
+```bash
+ALPHAVANTAGE_API_KEY=your_alpha_vantage_key_here
+# MARKETAUX_API_KEY=...   # only if use_news: true in configs/live_apis.yaml
+```
+
+**How to run ingestion**
+
+Use the **live** config for all stages. If required keys are missing, the pipeline exits with a clear message.
+
+```bash
+# Ingest prices (and optional news)
+python run.py --config configs/live_apis.yaml ingest
+
+# Then build features, train, backtest
+python run.py --config configs/live_apis.yaml build-features
+python run.py --config configs/live_apis.yaml train
+python run.py --config configs/live_apis.yaml backtest
+```
+
+Or run the full workflow in one go:
+
+```bash
+python run.py live
+```
+
+**Artifacts produced in live mode**
+
+| Stage | Outputs |
+|-------|---------|
+| **Ingest** | `data/raw/manifests/<timestamp>.json`, `data/raw/prices/<ticker>/`, optional `data/raw/news_normalized/` |
+| **Build-features** | `data/processed/<version>/features.csv`, `feature_manifest.json` |
+| **Train** | `models/<run_id>/` (model.keras, run_record.json, metrics_summary.json) |
+| **Backtest** | `reports/latest_backtest.md`, `reports/latest_metrics.json`, `reports/<version>/` |
+
+---
+
 ## Problem statement and prediction task
 
 **Primary task:** Predict **next-period trend direction** (up / down / sideways) for a given stock symbol, expressed as a continuous score in `[-1, 1]` (e.g. for use in ranking or threshold-based signals).
@@ -65,86 +216,6 @@ Backtest evaluation is performed only on the **test** window; validation is used
   - **Direction:** Accuracy (and optionally precision/recall) when thresholding the score to up/down/sideways.
   - **Reporting:** Metrics and, where applicable, simple plots (e.g. predicted vs actual, time series of predictions) are written to `reports/` for reproducibility.
 - **Walk-forward backtest:** When `eval.walk_forward` is set in config (e.g. `window_days: 28`, `step_days: 28`), the backtest iterates through time windows, evaluates baselines and the TensorFlow model on each window, and writes `reports/{version}/backtest_run.json` plus a human-readable `backtest_report.md`. The report can be regenerated deterministically from the stored artifact: `from src.eval.report import generate_report; generate_report("reports/<version>/backtest_run.json", "reports/<version>/backtest_report.md")`.
-
----
-
-## Recruiter demo (default config, offline, no API keys)
-
-The **default config** is `configs/recruiter_demo.yaml` (`mode: recruiter_demo`). Run the pipeline on bundled sample data with **no environment variables or API keys**. Ideal for a quick run after a fresh clone. You still need a venv and `pip install -r requirements.txt`; no `.env` or API keys are required.
-
-```bash
-# From repo root: create venv, install deps, then run demo (no .env)
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-make demo
-```
-
-Or run directly (default config is recruiter_demo):
-
-```bash
-python run.py demo
-# explicit config: python run.py --config configs/recruiter_demo.yaml demo
-```
-
-This runs **build-features → train → backtest** using `data/sample/` (minimal normalized prices for AAPL and MSFT over a short date range). You get:
-
-- Processed features under `data/processed/demo/`
-- A trained model under `models/`
-- A backtest metrics summary under `reports/`
-
----
-
-## Quick start (run with APIs)
-
-End-to-end run with real API keys: ingest data → build features → train → (optional) backtest → serve.
-
-**1. One-time setup**
-
-```bash
-cd stock-value-forecast
-python3 -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-**2. Add your API keys**
-
-- Get a free key: [Alpha Vantage](https://www.alphavantage.co/support/#api-key) (prices). Optional: [Marketaux](https://www.marketaux.com/register) (news).
-- In the repo root, create `.env` (or copy from `.env.example`) and set:
-
-```bash
-# .env (in repo root)
-ALPHAVANTAGE_API_KEY=your_alpha_vantage_key_here
-MARKETAUX_API_KEY=your_marketaux_key_here
-```
-
-(Leave `MARKETAUX_API_KEY` empty if you’re not using news; keep `use_news: false` in `configs/live_apis.yaml`.)
-
-**3. Run the pipeline with live APIs**
-
-From the repo root with venv activated, use the **live_apis** config. If required API keys are missing, the pipeline exits immediately with a clear message.
-
-```bash
-# Ingest prices (and news if use_news: true and MARKETAUX_API_KEY set)
-python run.py --config configs/live_apis.yaml ingest
-
-# Build features from ingested data
-python run.py --config configs/live_apis.yaml build-features
-
-# Train model (writes to models/)
-python run.py --config configs/live_apis.yaml train
-
-# Optional: run backtest
-python run.py --config configs/live_apis.yaml backtest
-
-# Start the prediction API (loads latest model)
-python run.py --config configs/live_apis.yaml serve
-```
-
-The API will be at **http://127.0.0.1:8000**. Try `GET /health`, `GET /model_info`, and `POST /predict` with a JSON body like `{"ticker": "AAPL", "as_of": "2024-01-15", "horizon": 1}`.
-
-**Using Make:** `make demo` (default config, offline, no keys). For live data use `--config configs/live_apis.yaml` with the run.py commands above; `make ingest`, `make build-features`, etc. use the default recruiter_demo config unless you pass a config explicitly.
 
 ---
 
@@ -241,6 +312,8 @@ All three jobs must pass for CI to be green. To **block PRs on failing tests**: 
 
 ## Serving API
 
+See **API Demo** above for how to start the service and example requests. Summary:
+
 The **Serve** stage runs a FastAPI app that loads the trained model artifact at startup (no re-training). Start it with:
 
 ```bash
@@ -261,17 +334,18 @@ The service resolves the model run via `MODEL_RUN_ID` (env) or the latest run un
 
 ## Quickstart (pipeline stages)
 
-Assume a Unix-like shell and Python 3.9+ with a virtual environment activated (see **Development** above). **Default config** is `configs/recruiter_demo.yaml` (offline). For live ingest and features use `configs/live_apis.yaml` and set API keys (pipeline fails early if keys are missing).
+Assume a Unix-like shell and Python 3.9+ with a virtual environment activated (see **Development** above).
 
-| Stage | Command (placeholder) | Purpose |
-|--------|------------------------|--------|
-| **Ingest** | `python run.py --config configs/live_apis.yaml ingest` | Fetch and save raw price (and optional news) data. |
-| **Features** | `python run.py --config configs/live_apis.yaml build-features` | Build feature vectors from raw data. |
-| **Train** | `python run.py --config configs/live_apis.yaml train` | Train model; save checkpoints and final artifact to `models/`. |
-| **Backtest** | `python run.py --config configs/live_apis.yaml backtest` | Run evaluation and write metrics/plots to `reports/`. |
-| **Serve** | `python run.py --config configs/live_apis.yaml serve` | Start the prediction API (loads model from `models/`). |
+- **Demo (default):** `python run.py demo` or `make demo` — uses `configs/recruiter_demo.yaml`, no API keys. Build-features → train → backtest on `data/sample/`.
+- **Live APIs (optional):** Use `--config configs/live_apis.yaml` for every stage and set `ALPHAVANTAGE_API_KEY` (and optionally `MARKETAUX_API_KEY`) in `.env`. See **Live APIs Mode (Optional)** above.
 
-Exact entry points (e.g. `src.ingest.run`) may be added or renamed as the codebase is implemented; the table above defines the intended usage per stage.
+| Stage | Demo | Live |
+|--------|------|------|
+| **Ingest** | *(not run in demo)* | `python run.py --config configs/live_apis.yaml ingest` |
+| **Features** | (part of `make demo`) | `python run.py --config configs/live_apis.yaml build-features` |
+| **Train** | (part of `make demo`) | `python run.py --config configs/live_apis.yaml train` |
+| **Backtest** | (part of `make demo`) | `python run.py --config configs/live_apis.yaml backtest` |
+| **Serve** | `python run.py serve` | `python run.py --config configs/live_apis.yaml serve` |
 
 ---
 

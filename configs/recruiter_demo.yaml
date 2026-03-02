@@ -30,7 +30,9 @@ train:
   processed_version: "latest"
 eval:
   processed_version: "latest"
-  walk_forward: null
+  min_train_days: 5
+  fold_size_days: 10
+  step_size_days: 10
 
 training:
   epochs: 3
