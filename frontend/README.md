@@ -27,26 +27,26 @@ pip install -r requirements.txt
 
 ## Run the UI
 
-With the venv **activated**, from the repo root:
+Set `BACKEND_URL` to the running API (no default). With the venv **activated**, from the repo root:
 
 ```bash
-streamlit run frontend/app.py
+BACKEND_URL=http://localhost:8000 streamlit run frontend/app.py
 ```
 
 Or from `frontend/`:
 
 ```bash
-streamlit run app.py
+BACKEND_URL=http://localhost:8000 streamlit run app.py
 ```
 
 The app opens in your browser (default: http://localhost:8501).
 
 ## Backend requirement
 
-**You must start the backend API before using live data.** From the repo root (with its own venv if you use one):
+**Start the backend API first.** From the repo root (with its own venv if you use one):
 
 ```bash
 python run.py serve
 ```
 
-The API runs at http://127.0.0.1:8000.
+The API runs at http://127.0.0.1:8000. The UI requires `BACKEND_URL`; if it is unset, the app shows a configuration error and does not call the API.

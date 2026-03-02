@@ -15,6 +15,8 @@ help:
 	@echo "Single stages (use with care; default config is recruiter_demo):"
 	@echo "  make ingest  make build-features  make train  make backtest  make serve"
 	@echo ""
+	@echo "  make dev     start backend (port 8000) + UI (port 8501); Ctrl+C to stop both"
+	@echo ""
 	@echo "Dev: make lint  make test  make test-integration"
 
 # CI-style checks (run before pushing)
@@ -50,8 +52,17 @@ backtest:
 serve:
 	$(PYTHON) run.py serve
 
+# Start backend (background) + UI (foreground). Wait for backend health (60s timeout); on failure kill backend and exit. Ctrl+C stops both.
+dev:
+	@BACKEND_PID=; \
+	trap 'kill $$BACKEND_PID 2>/dev/null; kill -9 $$(lsof -t -i:8000) 2>/dev/null; exit 0' INT TERM EXIT; \
+	$(PYTHON) run.py serve & BACKEND_PID=$$!; \
+	echo "Waiting for backend at http://localhost:8000/health (timeout 60s) ..."; \
+	sh ./scripts/wait-for-backend.sh 60 $$BACKEND_PID || { kill $$BACKEND_PID 2>/dev/null; exit 1; }; \
+	BACKEND_URL=http://localhost:8000 streamlit run frontend/app.py --server.port 8501 --server.address localhost
+
 # Run all stages in order (uses default config)
 pipeline: ingest build-features train backtest
 	@echo "[PIPELINE] All stages completed."
 
-.PHONY: help lint test test-integration demo live ingest build-features train backtest serve pipeline
+.PHONY: help lint test test-integration demo live ingest build-features train backtest serve dev pipeline
