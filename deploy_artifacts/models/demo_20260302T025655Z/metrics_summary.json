@@ -1,0 +1,41 @@
+{
+  "run_id": "demo_20260302T025655Z",
+  "config_hash": "55f83931e78bef637a1c2d1f348f181f5174f364d16accd40fea23dd864b4c80",
+  "git_commit_hash": "53bc4a3ee5afc1008cbbaee9697140ec7265efe5",
+  "dataset_version": "demo",
+  "feature_columns": [
+    "return_1d",
+    "return_5d",
+    "return_21d",
+    "volatility_5d",
+    "volatility_21d",
+    "range_hl",
+    "volume_pct_1d"
+  ],
+  "model_input_shape": [
+    null,
+    7
+  ],
+  "split_boundaries": {
+    "train_end": "2024-01-24",
+    "val_start": "2024-01-25",
+    "val_end": "2024-01-26",
+    "test_start": "2024-01-27"
+  },
+  "train_metrics": {
+    "loss": 0.4574148654937744,
+    "mae": 0.6032527685165405
+  },
+  "val_metrics_keras": {
+    "val_loss": 0.5894033908843994,
+    "val_mae": 0.7661142349243164
+  },
+  "val_metrics": {
+    "mse": 0.5894033136,
+    "rmse": 0.7677260668,
+    "mae": 0.7661142374,
+    "r2": -5453929888.216357,
+    "directional_accuracy": 1.0,
+    "n_samples": 4
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "raw_dataset_version": "demo",
+  "raw_manifest_path": "manifests/demo.json",
+  "feature_definitions": [
+    {
+      "name": "return_1d",
+      "description": "1-day simple return on adjusted close"
+    },
+    {
+      "name": "return_5d",
+      "description": "5-day simple return on adjusted close"
+    },
+    {
+      "name": "return_21d",
+      "description": "21-day simple return on adjusted close"
+    },
+    {
+      "name": "volatility_5d",
+      "description": "Rolling 5-day std of 1-day returns"
+    },
+    {
+      "name": "volatility_21d",
+      "description": "Rolling 21-day std of 1-day returns"
+    },
+    {
+      "name": "range_hl",
+      "description": "(high - low) / close"
+    },
+    {
+      "name": "volume_pct_1d",
+      "description": "1-day pct change in volume"
+    },
+    {
+      "name": "target_forward_return",
+      "description": "Forward N-day return (label)"
+    }
+  ],
+  "feature_windows": {
+    "lookback_days": 7,
+    "forward_return_days": 1,
+    "news_lookback_days": 7
+  },
+  "split_boundaries": {
+    "train_end": "2024-01-24",
+    "val_start": "2024-01-25",
+    "val_end": "2024-01-26",
+    "test_start": "2024-01-27"
+  },
+  "split_counts": {
+    "train": 20,
+    "val": 4,
+    "test": 26
+  },
+  "leakage_rule": "No data later than the prediction cutoff (row date) is used in feature generation; only past and same-day data. No article published after prediction cutoff is included in sentiment features.",
+  "processed_paths": [
+    "demo/features.csv"
+  ],
+  "row_count": 50,
+  "id_columns": [
+    "ticker",
+    "date"
+  ],
+  "feature_columns": [
+    "return_1d",
+    "return_5d",
+    "return_21d",
+    "volatility_5d",
+    "volatility_21d",
+    "range_hl",
+    "volume_pct_1d"
+  ],
+  "target_column": "target_forward_return"
+}

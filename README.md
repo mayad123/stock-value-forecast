@@ -404,6 +404,11 @@ make serve
 
 The service resolves the model run via `MODEL_RUN_ID` (env) or the latest run under `models/`. Optional env: `SERVE_MODELS_PATH`, `SERVE_PROCESSED_PATH` to override paths (e.g. in tests).
 
+**Cloud deployment (e.g. Render):** When `models/` and `data/processed/` do not exist (e.g. fresh clone), the service falls back to `deploy_artifacts/`, which contains committed demo model and processed data. To refresh these after running `make demo`, copy:
+
+- `models/demo_*` → `deploy_artifacts/models/`
+- `data/processed/demo/` → `deploy_artifacts/processed/`
+
 ---
 
 ## Quickstart (pipeline stages)

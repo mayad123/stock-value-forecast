@@ -1,0 +1,94 @@
+{
+  "run_id": "demo_20260302T025655Z",
+  "config_hash": "55f83931e78bef637a1c2d1f348f181f5174f364d16accd40fea23dd864b4c80",
+  "config_path": "/Users/mayadevarajan/Documents/GitHub Projects/stock-value-forecast/configs/recruiter_demo.yaml",
+  "git_commit_hash": "53bc4a3ee5afc1008cbbaee9697140ec7265efe5",
+  "random_seeds": {
+    "numpy": 42,
+    "tensorflow": 42,
+    "python": 42
+  },
+  "model_input_shape": [
+    null,
+    7
+  ],
+  "config": {
+    "training": {
+      "epochs": 3,
+      "batch_size": 8,
+      "learning_rate": 0.001,
+      "validation_split": 0.2,
+      "early_stopping_patience": 2
+    },
+    "time_horizon": {
+      "train_end": "2024-01-24",
+      "val_start": "2024-01-25",
+      "val_end": "2024-01-26",
+      "test_start": "2024-01-27"
+    },
+    "feature_windows": {
+      "lookback_days": 7,
+      "forward_return_days": 1
+    },
+    "paths": {
+      "data_raw": "data/sample",
+      "data_processed": "data/processed",
+      "models": "models",
+      "reports": "reports"
+    }
+  },
+  "dataset_version": "demo",
+  "feature_manifest_path": "/Users/mayadevarajan/Documents/GitHub Projects/stock-value-forecast/data/processed/demo/feature_manifest.json",
+  "split_boundaries": {
+    "train_end": "2024-01-24",
+    "val_start": "2024-01-25",
+    "val_end": "2024-01-26",
+    "test_start": "2024-01-27"
+  },
+  "feature_columns": [
+    "return_1d",
+    "return_5d",
+    "return_21d",
+    "volatility_5d",
+    "volatility_21d",
+    "range_hl",
+    "volume_pct_1d"
+  ],
+  "scaler": {
+    "mean": [
+      0.0026111530605703592,
+      0.013463424518704414,
+      0.019387224689126015,
+      0.00012959708692505956,
+      0.00024490285431966186,
+      0.010417409241199493,
+      0.013813602738082409
+    ],
+    "scale": [
+      2.2094365704106167e-05,
+      0.0008455039351247251,
+      0.0017972815549001098,
+      0.0003561544872354716,
+      0.00046476017450913787,
+      8.791778236627579e-05,
+      0.002819609362632036
+    ]
+  },
+  "train_metrics": {
+    "loss": 0.4574148654937744,
+    "mae": 0.6032527685165405
+  },
+  "val_metrics_keras": {
+    "val_loss": 0.5894033908843994,
+    "val_mae": 0.7661142349243164
+  },
+  "val_metrics": {
+    "mse": 0.5894033136,
+    "rmse": 0.7677260668,
+    "mae": 0.7661142374,
+    "r2": -5453929888.216357,
+    "directional_accuracy": 1.0,
+    "n_samples": 4
+  },
+  "model_path": "/Users/mayadevarajan/Documents/GitHub Projects/stock-value-forecast/models/demo_20260302T025655Z/model.keras"
+}

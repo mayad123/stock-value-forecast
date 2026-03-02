@@ -58,5 +58,8 @@ data/
 !data/sample/
 !data/sample/**
 models/
-reports/
+!deploy_artifacts/models/
+!deploy_artifacts/models/**
+reports/*
+!reports/latest_metrics.json
 

@@ -71,8 +71,21 @@ def _load_artifacts() -> None:
     import os
     if os.environ.get("SERVE_MODELS_PATH"):
         _models_path = Path(os.environ["SERVE_MODELS_PATH"])
+    elif not (_models_path.exists() and any(
+        d.is_dir() and ((d / "model.keras").exists() or (d / "saved_model").exists()) and (d / "run_record.json").exists()
+        for d in _models_path.iterdir()
+    )):
+        # Fallback for cloud deploy: use committed deploy_artifacts when models/ is missing/empty
+        _fallback = _repo_root / "deploy_artifacts" / "models"
+        if _fallback.exists() and any(
+            d.is_dir() and ((d / "model.keras").exists() or (d / "saved_model").exists()) and (d / "run_record.json").exists()
+            for d in _fallback.iterdir()
+        ):
+            _models_path = _fallback
     if os.environ.get("SERVE_PROCESSED_PATH"):
         _processed_path = Path(os.environ["SERVE_PROCESSED_PATH"])
+    elif not _processed_path.exists() and (_repo_root / "deploy_artifacts" / "processed").exists():
+        _processed_path = _repo_root / "deploy_artifacts" / "processed"
     run_dir = _resolve_run_dir()
     _run_id = run_dir.name
     from src.train.load import load_trained_model
