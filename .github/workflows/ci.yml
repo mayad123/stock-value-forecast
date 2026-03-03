@@ -54,6 +54,7 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
         env:
+          PYTHONPATH: ${{ github.workspace }}
           ALPHAVANTAGE_API_KEY: ""
           MARKETAUX_API_KEY: ""
 
@@ -78,5 +79,6 @@ jobs:
           pytest tests/test_integration_e2e.py::test_e2e_build_features_produces_valid_artifacts_no_leakage
           -v --tb=short
         env:
+          PYTHONPATH: ${{ github.workspace }}
           ALPHAVANTAGE_API_KEY: ""
           MARKETAUX_API_KEY: ""
