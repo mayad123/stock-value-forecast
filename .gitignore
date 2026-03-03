@@ -53,10 +53,10 @@ htmlcov/
 .env
 .env.local
 
-# Pipeline artifacts
-data/
-!data/sample/
-!data/sample/**
+# Pipeline artifacts (root-level data/ only; do not ignore src/data/)
+/data/
+!/data/sample/
+!/data/sample/**
 models/
 !deploy_artifacts/models/
 !deploy_artifacts/models/**
