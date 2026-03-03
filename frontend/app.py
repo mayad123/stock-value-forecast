@@ -431,7 +431,8 @@ else:
                 try:
                     with open(_LATEST_METRICS_PATH) as f:
                         metrics_data = json.load(f)
-                    if not isinstance(metrics_data.get("models"), dict):
+                    # Defensive: file must be a dict with a 'models' object
+                    if not isinstance(metrics_data, dict) or not isinstance(metrics_data.get("models"), dict):
                         metrics_error = "reports/latest_metrics.json has no valid 'models' object."
                         metrics_data = None
                 except (json.JSONDecodeError, OSError) as e:
@@ -590,8 +591,12 @@ else:
                     st.error(f"**Could not read metrics file:** {e}")
                     st.caption(_METRICS_FILE_MISSING_MSG)
                 else:
-                    folds = fold_data.get("folds") or []
-                    aggregate = fold_data.get("aggregate") or {}
+                    if not isinstance(fold_data, dict):
+                        st.error("**Metrics file has invalid format (expected JSON object).**")
+                        st.caption(_METRICS_FILE_MISSING_MSG)
+                    else:
+                        folds = fold_data.get("folds") or []
+                        aggregate = fold_data.get("aggregate") or {}
 
                     if len(folds) < 2:
                         st.warning(
