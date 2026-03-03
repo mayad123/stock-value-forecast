@@ -104,7 +104,9 @@ Or directly:
 python run.py demo
 ```
 
-This runs **build-features → train → backtest** using `data/sample/` (config: `configs/recruiter_demo.yaml`).
+This runs **build-features → train → backtest** using `data/sample/` (config: `configs/recruiter_demo_real.yaml`).
+
+**Training step:** The first time the train stage runs, TensorFlow may take 30–60 seconds before printing epoch progress. The pipeline forces CPU-only and suppresses verbose C++ logs to avoid long "Lock blocking" stalls; you should see `[TRAIN] Building model...`, then `[TRAIN] Starting fit...`, then `Epoch 1/N`. If it hangs for more than ~2 minutes with no epoch output, run with `CUDA_VISIBLE_DEVICES="" python run.py demo` (or `demo-real`).
 
 **3. Expected outputs**
 
@@ -247,7 +249,7 @@ Ingest → Features → Train → Backtest → Serve
 
 | Stage | Role |
 |--------|------|
-| **Ingest** | Fetch and persist raw data: historical prices (Alpha Vantage) and, optionally, news (Marketaux). Use `configs/live_apis.yaml` for live ingest; default config is `configs/recruiter_demo.yaml` (offline). |
+| **Ingest** | Fetch and persist raw data: historical prices (Alpha Vantage) and, optionally, news (Marketaux). Use `configs/live_apis.yaml` for live ingest; default offline config is `configs/recruiter_demo_real.yaml`. |
 | **Features** | Build model inputs: price-derived series, and optionally sentiment + relevancy from news. Output is a fixed-size feature vector (e.g. 8-D) per (symbol, date) with normalization stats for training and serving. |
 | **Train** | Train a small neural network (e.g. 8 → 16 → dropout → 8 → 1) to predict trend score. Training is config-driven; checkpoints and artifacts go to `models/`. |
 | **Backtest** | Evaluate on a held-out time period: regression metrics (e.g. MSE, MAE) and directional accuracy. Reports and plots go to `reports/`. |
@@ -404,10 +406,7 @@ make serve
 
 The service resolves the model run via `MODEL_RUN_ID` (env) or the latest run under `models/`. Optional env: `SERVE_MODELS_PATH`, `SERVE_PROCESSED_PATH` to override paths (e.g. in tests).
 
-**Cloud deployment (e.g. Render):** When `models/` and `data/processed/` do not exist (e.g. fresh clone), the service falls back to `deploy_artifacts/`, which contains committed demo model and processed data. To refresh these after running `make demo`, copy:
-
-- `models/demo_*` → `deploy_artifacts/models/`
-- `data/processed/demo/` → `deploy_artifacts/processed/`
+**Cloud deployment (e.g. Render):** When `models/` and `data/processed/` do not exist (e.g. fresh clone), the service falls back to `deploy_artifacts/`, which contains committed demo model and processed data. **Training automatically copies the new run to `deploy_artifacts/models/<run_id>/`** so the frontend uses the updated model after you commit and push. Set `UPDATE_DEPLOY_ARTIFACTS=0` before training to skip this. To refresh processed data for the UI, copy `data/processed/<version>/` → `deploy_artifacts/processed/` if needed.
 
 ---
 
@@ -415,7 +414,7 @@ The service resolves the model run via `MODEL_RUN_ID` (env) or the latest run un
 
 Assume a Unix-like shell and Python 3.9+ with a virtual environment activated (see **Development** above).
 
-- **Demo (default):** `python run.py demo` or `make demo` — uses `configs/recruiter_demo.yaml`, no API keys. Build-features → train → backtest on `data/sample/`.
+- **Demo (default):** `python run.py demo` or `make demo` — uses `configs/recruiter_demo_real.yaml`, no API keys. Build-features → train → backtest on `data/sample/` with the real demo timeline.
 - **Live APIs (optional):** Use `--config configs/live_apis.yaml` for every stage and set `ALPHAVANTAGE_API_KEY` (and optionally `MARKETAUX_API_KEY`) in `.env`. See **Live APIs Mode (Optional)** above.
 
 | Stage | Demo | Live |

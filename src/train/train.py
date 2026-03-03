@@ -7,18 +7,39 @@ does not collapse to average ticker behavior. Ticker encoding mapping is persist
 
 import hashlib
 import json
+import os
 import random
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import sys
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+# Avoid GPU init / thread contention that can block before first epoch (mutex.cc Lock blocking)
+try:
+    tf.config.set_visible_devices([], "GPU")
+except Exception:
+    pass
+try:
+    tf.config.threading.set_intra_op_parallelism_threads(1)
+    tf.config.threading.set_inter_op_parallelism_threads(1)
+except Exception:
+    pass
+# Force one-time TF runtime init here so any internal lock happens at import, not during fit()
+try:
+    _ = tf.constant(0)
+except Exception:
+    pass
+
 from src._cli import config_hash_from_dict, config_hash_from_file, get_git_commit
+from src.eval.baselines import get_baseline_predictions, list_baseline_names
 from src.eval.metrics import compute_metrics
-from src.features.price_features import FEATURE_NAMES
+from src.features.price_features import FEATURE_NAMES, TARGET_NAME
 from src.train.data import load_feature_manifest, load_train_val, resolve_processed_version, get_X_y
 from src.train.model import build_model
 
@@ -141,6 +162,9 @@ def run_training(
     random.seed(seed)
     random_seeds = {"numpy": seed, "tensorflow": seed, "python": seed}
 
+    log("Building model...")
+    sys.stdout.flush()
+    sys.stderr.flush()
     model = build_model(
         n_features=len(feature_cols),
         units=16,
@@ -158,6 +182,12 @@ def run_training(
             )
         )
 
+    log(f"Starting fit (epochs={epochs}, batch_size={batch_size})...")
+    sys.stdout.flush()
+    sys.stderr.flush()
+    baseline_metrics: Dict[str, Dict[str, Any]] = {}
+    baseline_deltas: Dict[str, Dict[str, float]] = {}
+
     if has_val:
         history = model.fit(
             X_train_n, y_train,
@@ -167,6 +197,7 @@ def run_training(
             callbacks=callbacks,
             verbose=1,
         )
+        epochs_ran = int(len(history.history.get("loss", [])) or 0)
         train_metrics = {
             "loss": float(history.history["loss"][-1]),
             "mae": float(history.history["mae"][-1]),
@@ -177,6 +208,22 @@ def run_training(
         }
         y_val_pred = model.predict(X_val_n, verbose=0).flatten()
         val_metrics_shared = compute_metrics(y_val, y_val_pred)
+
+        # Baselines on the exact same validation slice as val_metrics
+        for name in list_baseline_names():
+            y_val_pred_baseline = get_baseline_predictions(name, train_df, val_df)
+            m = compute_metrics(y_val, y_val_pred_baseline)
+            baseline_metrics[name] = m
+
+        # Baseline deltas: model_metric - baseline_metric (MAE, RMSE)
+        if baseline_metrics and "mae" in val_metrics_shared and "rmse" in val_metrics_shared:
+            for name, m in baseline_metrics.items():
+                deltas: Dict[str, float] = {}
+                if "mae" in m:
+                    deltas["mae"] = float(val_metrics_shared["mae"]) - float(m["mae"])
+                if "rmse" in m:
+                    deltas["rmse"] = float(val_metrics_shared["rmse"]) - float(m["rmse"])
+                baseline_deltas[name] = deltas
     else:
         history = model.fit(
             X_train_n, y_train,
@@ -184,6 +231,7 @@ def run_training(
             batch_size=batch_size,
             verbose=1,
         )
+        epochs_ran = int(len(history.history.get("loss", [])) or 0)
         train_metrics = {
             "loss": float(history.history["loss"][-1]),
             "mae": float(history.history["mae"][-1]),
@@ -204,10 +252,86 @@ def run_training(
     feature_manifest = load_feature_manifest(processed_path, dataset_version)
     split_boundaries = feature_manifest.get("split_boundaries") or config.get("time_horizon", {})
     model_input_shape: List[Optional[int]] = [int(s) if s is not None else None for s in model.input_shape]
+
+    # Paths in run_record should be relative to repo root for portability
+    def _rel(path_str: Optional[str]) -> Optional[str]:
+        if not path_str:
+            return None
+        try:
+            return os.path.relpath(path_str, repo_root)
+        except Exception:
+            return path_str
+
+    rel_config_path = _rel(config_path_str) if config_path_str else None
+    rel_feature_manifest_path = _rel(str(processed_path / dataset_version / "feature_manifest.json"))
+    rel_model_path = _rel(str(saved_model_path))
+
+    # Data provenance: coverage and counts for the processed dataset used for training
+    features_path = processed_path / dataset_version / "features.csv"
+    data_provenance: Dict[str, Any] = {}
+    try:
+        df_all = pd.read_csv(features_path)
+        if "split" in df_all.columns and "ticker" in df_all.columns and "date" in df_all.columns:
+            split_counts = df_all["split"].value_counts().to_dict()
+            n_train_samples = int(split_counts.get("train", 0))
+            n_val_samples = int(split_counts.get("val", 0))
+            n_test_samples = int(split_counts.get("test", 0))
+
+            rows_per_ticker: Dict[str, Dict[str, int]] = {}
+            date_range_per_ticker: Dict[str, Dict[str, Optional[str]]] = {}
+            for ticker, g in df_all.groupby("ticker", sort=True):
+                sc = g["split"].value_counts().to_dict()
+                rows_per_ticker[str(ticker)] = {
+                    "train": int(sc.get("train", 0)),
+                    "val": int(sc.get("val", 0)),
+                    "test": int(sc.get("test", 0)),
+                }
+                dates = pd.to_datetime(g["date"])
+                if not dates.empty:
+                    date_range_per_ticker[str(ticker)] = {
+                        "min": dates.min().strftime("%Y-%m-%d"),
+                        "max": dates.max().strftime("%Y-%m-%d"),
+                    }
+                else:
+                    date_range_per_ticker[str(ticker)] = {"min": None, "max": None}
+
+            data_provenance = {
+                "n_train_samples": n_train_samples,
+                "n_val_samples": n_val_samples,
+                "n_test_samples": n_test_samples,
+                "rows_per_ticker": rows_per_ticker,
+                "date_range_per_ticker": date_range_per_ticker,
+                "rows_dropped_feature_windows": int(
+                    feature_manifest.get("rows_dropped_feature_windows", 0)
+                ),
+            }
+    except Exception:
+        data_provenance = {}
+
+    # Effective training configuration vs. what actually ran (epochs and early stopping)
+    epochs_ran_int = int(epochs_ran) if "epochs_ran" in locals() else 0
+    early_stopping_triggered = bool(
+        patience > 0 and has_val and epochs_ran_int < epochs
+    )
+    training_effective = {
+        "epochs_configured": int(epochs),
+        "epochs_ran": epochs_ran_int,
+        "early_stopping_triggered": early_stopping_triggered,
+    }
+
+    # Target metadata: what the model predicts
+    fw_cfg = config.get("feature_windows") or feature_manifest.get("feature_windows") or {}
+    horizon_days = int(fw_cfg.get("forward_return_days", 1))
+    target = {
+        "target_name": TARGET_NAME,
+        "horizon_days": horizon_days,
+        "return_type": "simple",          # adj.shift(-h)/adj - 1.0
+        "scaling": None,                  # no additional scaling applied
+    }
     run_record = {
         "run_id": run_id,
         "config_hash": config_hash,
-        "config_path": config_path_str,
+        "config_path": rel_config_path,
         "git_commit_hash": git_commit_hash,
         "random_seeds": random_seeds,
         "model_input_shape": model_input_shape,
@@ -217,8 +341,9 @@ def run_training(
             "feature_windows": config.get("feature_windows", {}),
             "paths": paths_cfg,
         },
+        "target": target,
         "dataset_version": dataset_version,
-        "feature_manifest_path": str(processed_path / dataset_version / "feature_manifest.json"),
+        "feature_manifest_path": rel_feature_manifest_path,
         "split_boundaries": split_boundaries,
         "feature_columns": feature_cols,
         "tickers": tickers,
@@ -230,10 +355,14 @@ def run_training(
             "mean": mean.tolist(),
             "scale": std.tolist(),
         },
+        "data_provenance": data_provenance,
+        "training_effective": training_effective,
         "train_metrics": train_metrics,
         "val_metrics_keras": val_metrics_keras,
         "val_metrics": val_metrics_shared,
-        "model_path": str(saved_model_path),
+        "baseline_metrics": baseline_metrics,
+        "baseline_deltas": baseline_deltas,
+        "model_path": rel_model_path,
     }
 
     record_path = out_dir / "run_record.json"
@@ -256,10 +385,24 @@ def run_training(
         "train_metrics": train_metrics,
         "val_metrics_keras": val_metrics_keras,
         "val_metrics": val_metrics_shared,
+        "baseline_metrics": baseline_metrics,
+        "baseline_deltas": baseline_deltas,
+        "target": target,
+        "training_effective": training_effective,
     }
     metrics_path = out_dir / "metrics_summary.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics_summary, f, indent=2)
     log(f"Metrics summary: {metrics_path}")
+
+    # Mirror this run to deploy_artifacts so the frontend/serve use it when models/ is absent (e.g. cloud)
+    if os.environ.get("UPDATE_DEPLOY_ARTIFACTS", "1") == "1":
+        deploy_models = repo_root / "deploy_artifacts" / "models"
+        deploy_models.mkdir(parents=True, exist_ok=True)
+        dest = deploy_models / run_id
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(out_dir, dest)
+        log(f"Deploy artifact updated: {dest} (frontend will use this when models/ is empty)")
 
     return run_id

@@ -1,16 +1,23 @@
-# Pipeline: two explicit workflows (demo | live) and single-stage targets
-# Usage: make | make help | make demo | make live | make ingest | ...
+# Pipeline: two explicit workflows (demo | live | demo-real) and single-stage targets
+# Usage: make | make help | make demo | make demo-real | make live | make ingest | ...
+# Use venv: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+# Then: make demo-real  (or PYTHON=./venv/bin/python make demo-real)
 
 PYTHON ?= python
+
+# Env vars that prevent TensorFlow from hanging (Lock blocking). Set for any target that runs train.
+TF_SAFE_ENV = CUDA_VISIBLE_DEVICES="" TF_CPP_MIN_LOG_LEVEL=3 TF_NUM_INTEROP_THREADS=1 TF_NUM_INTRAOP_THREADS=1
 
 .DEFAULT_GOAL := help
 
 help:
 	@echo "Workflows (explicit mode; no cross-mode):"
-	@echo "  make demo   configs/recruiter_demo.yaml   build-features -> train -> backtest"
-	@echo "              (offline, no ingest, no API keys)"
-	@echo "  make live   configs/live_apis.yaml       ingest -> build-features -> train -> backtest"
-	@echo "              (ingest prices + optional news, then features/train/backtest; requires API keys)"
+	@echo "  make demo       configs/recruiter_demo_real.yaml   build-features -> train -> backtest"
+	@echo "                  (offline, no ingest, no API keys; real sample timeline)"
+	@echo "  make demo-real  configs/recruiter_demo_real.yaml   validate -> manifest -> features -> train -> backtest"
+	@echo "                  (real sample data; use this to avoid TF locking: runs with CPU + single-thread env)"
+	@echo "  make live       configs/live_apis.yaml   ingest -> build-features -> train -> backtest"
+	@echo "                  (ingest prices + optional news; requires API keys)"
 	@echo ""
 	@echo "Single stages (use with care; default config is recruiter_demo):"
 	@echo "  make ingest  make build-features  make train  make backtest  make serve"
@@ -31,11 +38,15 @@ test-integration:
 
 # Demo: recruiter_demo.yaml only; never runs ingest
 demo:
-	$(PYTHON) run.py demo
+	$(TF_SAFE_ENV) $(PYTHON) run.py demo
+
+# Demo on real sample timeline (validate -> manifest -> features -> train -> backtest); safe TF env to avoid locking
+demo-real:
+	$(TF_SAFE_ENV) $(PYTHON) run.py demo-real
 
 # Live: live_apis.yaml; runs ingest (prices + optional news) then build-features -> train -> backtest
 live:
-	$(PYTHON) run.py live
+	$(TF_SAFE_ENV) $(PYTHON) run.py live
 
 ingest:
 	$(PYTHON) run.py ingest
@@ -44,7 +55,7 @@ build-features:
 	$(PYTHON) run.py build-features
 
 train:
-	$(PYTHON) run.py train
+	$(TF_SAFE_ENV) $(PYTHON) run.py train
 
 backtest:
 	$(PYTHON) run.py backtest
@@ -65,4 +76,4 @@ dev:
 pipeline: ingest build-features train backtest
 	@echo "[PIPELINE] All stages completed."
 
-.PHONY: help lint test test-integration demo live ingest build-features train backtest serve dev pipeline
+.PHONY: help lint test test-integration demo demo-real live ingest build-features train backtest serve dev pipeline

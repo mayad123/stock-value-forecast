@@ -21,7 +21,7 @@ def test_compute_metrics():
     y_true = [0.01, -0.02, 0.0, 0.03]
     y_pred = [0.01, 0.01, 0.0, 0.02]
     m = compute_metrics(y_true, y_pred)
-    assert "mse" in m and "mae" in m and "rmse" in m and "r2" in m and "directional_accuracy" in m and "n_samples" in m
+    assert "mse" in m and "mae" in m and "rmse" in m and "r2" in m and "directional_accuracy" in m and "ic" in m and "n_samples" in m
     assert m["n_samples"] == 4
     # Same sign: (0.01,0.01), (0,0), (0.03,0.02); different: (-0.02, 0.01) -> 3/4
     assert m["directional_accuracy"] == pytest.approx(0.75)

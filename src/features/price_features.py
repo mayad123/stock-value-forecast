@@ -242,7 +242,8 @@ def run_build_features(
                 "Run ingest first (e.g. make live or python run.py live)."
             ) from e
         raise
-    log(f"Loaded {len(df)} rows from normalized prices")
+    raw_row_count = int(len(df))
+    log(f"Loaded {raw_row_count} rows from normalized prices")
 
     fw = config.get("feature_windows", {})
     lookback = int(fw.get("lookback_days", 21))
@@ -304,6 +305,9 @@ def run_build_features(
     log(f"Wrote {features_csv}")
 
     raw_manifest_path = raw_root / "manifests" / f"{raw_dataset_version}.json"
+    rows_after_feature_windows = int(len(out_df))
+    rows_dropped_feature_windows = int(raw_row_count - rows_after_feature_windows)
+
     feature_manifest = {
         "raw_dataset_version": raw_dataset_version,
         "raw_manifest_path": str(raw_manifest_path.relative_to(raw_root)) if raw_manifest_path.exists() else None,
@@ -313,7 +317,8 @@ def run_build_features(
         "split_counts": split_counts,
         "leakage_rule": "No data later than the prediction cutoff (row date) is used in feature generation; only past and same-day data. No article published after prediction cutoff is included in sentiment features.",
         "processed_paths": [str(features_csv.relative_to(processed_path))],
-        "row_count": int(len(out_df)),
+        "row_count": rows_after_feature_windows,
+        "rows_dropped_feature_windows": rows_dropped_feature_windows,
         "id_columns": ID_COLS,
         "feature_columns": feature_names,
         "target_column": TARGET_NAME,

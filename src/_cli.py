@@ -11,8 +11,8 @@ from typing import Any, Dict, Optional
 # Repo root: src/_cli.py -> parents[1] = repo root
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Default config when none specified (recruiter demo = offline, no API keys)
-DEFAULT_CONFIG_PATH = "configs/recruiter_demo.yaml"
+# Default config when none specified (recruiter demo on real sample timeline, offline, no API keys)
+DEFAULT_CONFIG_PATH = "configs/recruiter_demo_real.yaml"
 
 
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:

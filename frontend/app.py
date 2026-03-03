@@ -53,7 +53,13 @@ st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
     "Navigate",
-    options=["Evaluation", "Model Overview", "Prediction Explorer", "Fold Stability"],
+    options=[
+        "Evaluation",
+        "Model Overview",
+        "Prediction Explorer",
+        "Fold Stability",
+        "Price + Backtest Overlay",
+    ],
     index=0,
     label_visibility="collapsed",
 )
@@ -78,16 +84,81 @@ if _BACKEND_URL:
                 st.error("Ticker and date are required.")
             else:
                 try:
+                    # One on-demand /predict call per click
+                    base = _BACKEND_URL.rstrip("/")
                     r = requests.post(
-                        f"{_BACKEND_URL.rstrip('/')}/predict",
+                        f"{base}/predict",
                         json={"ticker": t, "as_of": d, "horizon": 1},
                         timeout=_BACKEND_TIMEOUT,
                     )
                     if r.ok:
                         data = r.json()
+                        pred_val = data.get("prediction", None)
+                        model_version = data.get("model_version") or "—"
+
+                        # Best-effort fetch of current price (most recent <= as_of) via /prices
+                        price_current = None
+                        try:
+                            r_price = requests.get(
+                                f"{base}/prices",
+                                params={"ticker": t, "end_date": d},
+                                timeout=_BACKEND_TIMEOUT,
+                            )
+                            if r_price.ok:
+                                prices = r_price.json() if isinstance(r_price.json(), list) else []
+                                if prices:
+                                    # Take the last row (latest date <= as_of)
+                                    last = prices[-1]
+                                    if "adjusted_close" in last:
+                                        price_current = float(last["adjusted_close"])
+                                    elif "close" in last:
+                                        price_current = float(last["close"])
+                        except requests.RequestException:
+                            price_current = None
+
+                        # Best-effort fetch of dataset version via /model_info
+                        dataset_version = "—"
+                        try:
+                            r_info = requests.get(f"{base}/model_info", timeout=_BACKEND_TIMEOUT)
+                            if r_info.ok:
+                                info = r_info.json()
+                                dataset_version = info.get("dataset_version", "—")
+                        except requests.RequestException:
+                            dataset_version = "—"
+
                         st.success("Prediction received.")
-                        st.metric("Prediction", data.get("prediction", "—"))
-                        st.caption("Model version: " + (data.get("model_version") or "—"))
+
+                        # Compute implied next-day price if we have both prediction and current price
+                        price_next = None
+                        if isinstance(pred_val, (int, float)) and price_current is not None:
+                            try:
+                                price_next = price_current * (1.0 + float(pred_val))
+                            except Exception:
+                                price_next = None
+
+                        # Display: current price, predicted return (as %), implied next-day price
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if price_current is not None:
+                                st.metric("Current price", f"{price_current:,.2f}")
+                            else:
+                                st.metric("Current price", "N/A")
+                            if isinstance(pred_val, (int, float)):
+                                st.metric(
+                                    "Predicted 1-day simple return",
+                                    f"{float(pred_val) * 100:.2f}%",
+                                )
+                                st.caption("Predicted 1-day simple return (not a probability).")
+                            else:
+                                st.metric("Predicted 1-day simple return", "N/A")
+                                st.caption("Predicted 1-day simple return (not a probability).")
+                        with c2:
+                            if price_next is not None:
+                                st.metric("Implied next-day price", f"{price_next:,.2f}")
+                            else:
+                                st.metric("Implied next-day price", "N/A")
+                            st.caption(f"Model version: {model_version}")
+                            st.caption(f"Dataset version: {dataset_version}")
                     else:
                         try:
                             err = r.json()
@@ -618,6 +689,197 @@ else:
                             st.plotly_chart(fig, use_container_width=True)
                         else:
                             st.info("No plottable per-fold metrics.")
+
+        elif page == "Price + Backtest Overlay":
+            st.header("Price + Backtest Overlay")
+            st.markdown(
+                "Visualize **backtest-window predictions** against historical prices for a selected ticker. "
+                "This page is for recruiter-friendly intuition, not live trading."
+            )
+            st.divider()
+
+            base = f"{_BACKEND_URL.rstrip('/')}"
+            predictions_data = []
+            predictions_error = None
+            with st.spinner("Loading predictions…"):
+                try:
+                    r = requests.get(f"{base}/predictions", timeout=_BACKEND_TIMEOUT)
+                    if r.ok:
+                        predictions_data = r.json() if isinstance(r.json(), list) else []
+                    else:
+                        predictions_error = f"/predictions returned {r.status_code}"
+                except requests.RequestException as e:
+                    predictions_error = str(e)
+
+            if predictions_error:
+                st.error("**Could not load predictions.** " + predictions_error)
+                st.caption(
+                    "Ensure the backend is running and a backtest has been run "
+                    "(e.g. `make demo` or `python run.py demo-real`)."
+                )
+            elif not predictions_data:
+                st.info("No predictions available. Run a backtest first.")
+            else:
+                import pandas as pd
+
+                pred_df = pd.DataFrame(predictions_data)
+                if "ticker" not in pred_df.columns or "target_date" not in pred_df.columns:
+                    st.error("Predictions payload missing required columns.")
+                else:
+                    pred_df["ticker"] = pred_df["ticker"].astype(str)
+                    pred_df["target_date"] = pd.to_datetime(pred_df["target_date"])
+
+                    tickers = sorted(pred_df["ticker"].unique())
+                    model_names = sorted(pred_df["model_name"].unique()) if "model_name" in pred_df.columns else []
+
+                    c1, c2 = st.columns([1, 1])
+                    with c1:
+                        sel_ticker = st.selectbox("Ticker", options=tickers, index=0)
+                    with c2:
+                        default_models = ["tensorflow"] if "tensorflow" in model_names else model_names
+                        sel_models = st.multiselect(
+                            "Models (backtest)",
+                            options=model_names,
+                            default=default_models,
+                        )
+
+                    pred_t = pred_df[pred_df["ticker"] == sel_ticker]
+                    if sel_models:
+                        pred_t = pred_t[pred_t["model_name"].isin(sel_models)]
+
+                    if pred_t.empty:
+                        st.info("No prediction rows for this ticker / model selection.")
+                    else:
+                        # Date range from target_date
+                        min_date = pred_t["target_date"].min().strftime("%Y-%m-%d")
+                        max_date = pred_t["target_date"].max().strftime("%Y-%m-%d")
+
+                        # Fetch prices for the same window
+                        prices_error = None
+                        prices_data = []
+                        with st.spinner(f"Loading prices for {sel_ticker}…"):
+                            try:
+                                r = requests.get(
+                                    f"{base}/prices",
+                                    params={"ticker": sel_ticker, "start_date": min_date, "end_date": max_date},
+                                    timeout=_BACKEND_TIMEOUT,
+                                )
+                                if r.ok:
+                                    prices_data = r.json() if isinstance(r.json(), list) else []
+                                else:
+                                    prices_error = f"/prices returned {r.status_code}"
+                            except requests.RequestException as e:
+                                prices_error = str(e)
+
+                        if prices_error:
+                            st.error("**Could not load prices.** " + prices_error)
+                        elif not prices_data:
+                            st.info("No price data available for this ticker and date range.")
+                        else:
+                            prices_df = pd.DataFrame(prices_data)
+                            if "date" not in prices_df.columns:
+                                st.error("Price payload missing 'date' column.")
+                            else:
+                                prices_df["date"] = pd.to_datetime(prices_df["date"])
+                                # Prefer adjusted_close, fall back to close
+                                price_col = None
+                                for c in ["adjusted_close", "close"]:
+                                    if c in prices_df.columns:
+                                        price_col = c
+                                        break
+                                if price_col is None:
+                                    st.error("Price payload missing adjusted_close/close columns.")
+                                else:
+                                    prices_df = prices_df.sort_values("date")
+
+                                    # Plot 1: price line
+                                    st.subheader(f"Price for {sel_ticker}")
+                                    fig_price = px.line(
+                                        prices_df,
+                                        x="date",
+                                        y=price_col,
+                                        title=f"{sel_ticker} price (demo dataset)",
+                                    )
+                                    fig_price.update_layout(xaxis_title="Date", yaxis_title=price_col)
+                                    st.plotly_chart(fig_price, use_container_width=True)
+
+                                    # Prepare prediction series aligned by target_date
+                                    st.subheader("Backtest predictions vs actual target")
+                                    pred_plot = pred_t.copy()
+                                    pred_plot["target_date"] = pred_plot["target_date"].dt.strftime("%Y-%m-%d")
+
+                                    # Melt into long format: y_true vs y_pred per model
+                                    series_rows = []
+                                    for _, row in pred_plot.iterrows():
+                                        td = row["target_date"]
+                                        if "y_true" in row and not pd.isna(row["y_true"]):
+                                            series_rows.append(
+                                                {
+                                                    "target_date": td,
+                                                    "value": float(row["y_true"]),
+                                                    "Series": "Actual (y_true)",
+                                                }
+                                            )
+                                        if "y_pred" in row and not pd.isna(row["y_pred"]):
+                                            label = f"Pred ({row['model_name']})"
+                                            series_rows.append(
+                                                {
+                                                    "target_date": td,
+                                                    "value": float(row["y_pred"]),
+                                                    "Series": label,
+                                                }
+                                            )
+                                    if series_rows:
+                                        series_df = pd.DataFrame(series_rows)
+                                        fig_pred = px.line(
+                                            series_df,
+                                            x="target_date",
+                                            y="value",
+                                            color="Series",
+                                            markers=True,
+                                            title="Predicted vs actual forward return (backtest windows)",
+                                        )
+                                        fig_pred.update_layout(
+                                            xaxis_title="Target date",
+                                            yaxis_title="Forward return",
+                                        )
+                                        st.plotly_chart(fig_pred, use_container_width=True)
+                                    else:
+                                        st.caption("No plottable prediction series.")
+
+                                    # Optional error plot: y_pred - y_true
+                                    if "y_true" in pred_t.columns and "y_pred" in pred_t.columns:
+                                        st.subheader("Prediction error (y_pred - y_true)")
+                                        err_rows = []
+                                        for _, row in pred_t.iterrows():
+                                            if pd.isna(row.get("y_true")) or pd.isna(row.get("y_pred")):
+                                                continue
+                                            err_rows.append(
+                                                {
+                                                    "target_date": row["target_date"],
+                                                    "Error": float(row["y_pred"] - row["y_true"]),
+                                                    "Model": row.get("model_name"),
+                                                }
+                                            )
+                                        if err_rows:
+                                            err_df = pd.DataFrame(err_rows)
+                                            err_df["target_date"] = err_df["target_date"].dt.strftime("%Y-%m-%d")
+                                            fig_err = px.scatter(
+                                                err_df,
+                                                x="target_date",
+                                                y="Error",
+                                                color="Model",
+                                                title="Prediction error over time (backtest windows)",
+                                            )
+                                            fig_err.update_layout(xaxis_title="Target date", yaxis_title="y_pred - y_true")
+                                            st.plotly_chart(fig_err, use_container_width=True)
+                                        else:
+                                            st.caption("No error points to plot.")
+
+                                    st.caption(
+                                        "These predictions come from **backtest windows** on the offline demo dataset; "
+                                        "they are not live trading signals."
+                                    )
 
     except Exception as e:
         st.error("**Something went wrong on this page.**")

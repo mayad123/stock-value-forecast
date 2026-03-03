@@ -256,6 +256,41 @@ def run_backtest(
         if predictions_list:
             predictions_df = pd.DataFrame(predictions_list)
             _write_predictions_csv(reports_path, dataset_version, predictions_df, log)
+
+        # Attach a compact backtest_summary to the trained run's run_record.json (if a run exists)
+        try:
+            num_folds = len(artifact.get("folds") or [])
+            aggregate = artifact.get("aggregate") or {}
+            # Path to artifact relative to repo root for portability
+            rel_artifact_path = artifact_path.relative_to(repo_root).as_posix()
+            backtest_summary = {
+                "num_folds": num_folds,
+                "aggregate": aggregate,
+                "artifact_path": rel_artifact_path,
+            }
+
+            run_id = (config.get("eval") or {}).get("tensorflow_run_id", "").strip() or None
+            if not run_id and models_path.exists():
+                candidates = [
+                    d.name
+                    for d in models_path.iterdir()
+                    if d.is_dir() and d.name.startswith(dataset_version + "_")
+                ]
+                run_id = sorted(candidates)[-1] if candidates else None
+            if run_id:
+                run_dir = models_path / run_id
+                rr_path = run_dir / "run_record.json"
+                if rr_path.exists():
+                    with open(rr_path) as f:
+                        rr = json.load(f)
+                    rr["backtest_summary"] = backtest_summary
+                    with open(rr_path, "w") as f:
+                        json.dump(rr, f, indent=2)
+                    log(f"Attached backtest_summary to {rr_path}")
+        except Exception:
+            # Backtest artifacts are still written even if attaching summary fails
+            log("Warning: could not attach backtest_summary to run_record.json")
+
         return artifact
     else:
         # Single-window (legacy)

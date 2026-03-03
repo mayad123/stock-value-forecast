@@ -133,7 +133,7 @@ def test_demo_mode_ingest_aborts_no_http():
     from src.ingest.run import run as run_ingest
     from src._cli import load_config
 
-    config = load_config(str(REPO_ROOT / "configs" / "recruiter_demo.yaml"))
+    config = load_config(str(REPO_ROOT / "configs" / "recruiter_demo_real.yaml"))
     assert config.get("mode") == "recruiter_demo"
     with pytest.raises(SystemExit) as exc_info:
         run_ingest(config)
@@ -179,9 +179,9 @@ def test_config_hash_from_file():
     """Config hash from file hashes exact file content."""
     from src._cli import config_hash_from_file
 
-    path = REPO_ROOT / "configs" / "recruiter_demo.yaml"
+    path = REPO_ROOT / "configs" / "recruiter_demo_real.yaml"
     if not path.exists():
-        pytest.skip("configs/recruiter_demo.yaml not found")
+        pytest.skip("configs/recruiter_demo_real.yaml not found")
     h = config_hash_from_file(path)
     assert len(h) == 64
     assert all(c in "0123456789abcdef" for c in h)

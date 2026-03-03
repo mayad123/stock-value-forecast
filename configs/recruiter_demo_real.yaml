@@ -1,0 +1,51 @@
+# Recruiter demo on real multi-ticker timeline (data/sample with demo_real_v1 manifest).
+# Run: python run.py --config configs/recruiter_demo_real.yaml build-features
+#      python run.py --config configs/recruiter_demo_real.yaml train
+#      python run.py --config configs/recruiter_demo_real.yaml backtest
+# Or:  python run.py build-manifest --dataset-version demo_real_v1  then use this config.
+# Split boundaries and walk-forward are set so backtest produces >= 5 folds with meaningful samples.
+
+mode: recruiter_demo
+
+tickers:
+  symbols: [AAPL, AMD, AMZN, META, MSFT]
+
+# Timeline: train ~8y, val 6 months, test from 2024-07-01 to end (~20 months) for >= 5 walk-forward folds
+time_horizon:
+  train_end: "2023-12-31"
+  val_start: "2024-01-01"
+  val_end: "2024-06-30"
+  test_start: "2024-07-01"
+
+feature_windows:
+  lookback_days: 21
+  forward_return_days: 1
+
+paths:
+  data_raw: "data/sample"
+  data_processed: "data/processed"
+  models: "models"
+  reports: "reports"
+
+feature_build:
+  raw_dataset_version: "demo_real_v1"
+
+train:
+  processed_version: "latest"
+
+# Walk-forward: fold_size_days and step_size_days so test period yields >= 5 folds (target)
+# Test period ~420 trading days; 63-day windows with 63-day step => ~6–7 folds
+eval:
+  processed_version: "latest"
+  min_train_days: 252   # require at least ~1 year of train dates per fold
+  fold_size_days: 63    # ~3 months of trading days per test window
+  step_size_days: 63    # non-overlapping windows => max folds from test range
+
+training:
+  epochs: 20
+  batch_size: 32
+  learning_rate: 0.001
+  validation_split: 0.2
+  early_stopping_patience: 3
+
+use_news: false

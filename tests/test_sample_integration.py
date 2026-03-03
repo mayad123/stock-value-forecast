@@ -45,7 +45,7 @@ def test_sample_build_train_load_inference():
         processed_root.mkdir()
         models_root.mkdir()
 
-        config = load_config(str(REPO_ROOT / "configs" / "recruiter_demo.yaml"))
+        config = load_config(str(REPO_ROOT / "configs" / "recruiter_demo_real.yaml"))
         config["paths"] = {
             "data_raw": str(DATA_SAMPLE),
             "data_processed": str(processed_root),
@@ -55,7 +55,7 @@ def test_sample_build_train_load_inference():
 
         # 1. Build features from data/sample
         run_build_features(config, raw_root=DATA_SAMPLE, processed_root=processed_root)
-        features_path = processed_root / "demo" / "features.csv"
+        features_path = processed_root / "demo_real_v1" / "features.csv"
         assert features_path.exists(), "features.csv must be produced from data/sample"
 
         # 2. Train and save artifact
@@ -63,7 +63,7 @@ def test_sample_build_train_load_inference():
             config,
             processed_root=processed_root,
             models_root=models_root,
-            dataset_version_hint="demo",
+            dataset_version_hint="demo_real_v1",
         )
         assert run_id
         run_dir = models_root / run_id

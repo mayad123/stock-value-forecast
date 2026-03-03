@@ -15,7 +15,7 @@ from src.eval.baselines import get_baseline_predictions, list_baseline_names
 from src.eval.metrics import compute_metrics
 
 # Scalar metrics to aggregate with mean/std (exclude n_samples or handle separately)
-SCALAR_METRIC_KEYS = ["mse", "rmse", "mae", "r2", "directional_accuracy"]
+SCALAR_METRIC_KEYS = ["mse", "rmse", "mae", "r2", "directional_accuracy", "ic"]
 
 
 def _evaluate_tf(
