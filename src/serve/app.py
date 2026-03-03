@@ -91,12 +91,16 @@ def _load_artifacts() -> None:
         for d in _models_path.iterdir()
     )):
         # Fallback for cloud deploy: use committed deploy_artifacts when models/ is missing/empty
-        _fallback = _repo_root / "deploy_artifacts" / "models"
-        if _fallback.exists() and any(
+        _fallback_models = _repo_root / "deploy_artifacts" / "models"
+        _fallback_processed = _repo_root / "deploy_artifacts" / "processed"
+        if _fallback_models.exists() and any(
             d.is_dir() and ((d / "model.keras").exists() or (d / "saved_model").exists()) and (d / "run_record.json").exists()
-            for d in _fallback.iterdir()
+            for d in _fallback_models.iterdir()
         ):
-            _models_path = _fallback
+            _models_path = _fallback_models
+            # Use deploy_artifacts processed data so features.csv is found for prediction_options and /predict
+            if _fallback_processed.exists():
+                _processed_path = _fallback_processed
     if os.environ.get("SERVE_PROCESSED_PATH"):
         _processed_path = Path(os.environ["SERVE_PROCESSED_PATH"])
     elif not _processed_path.exists() and (_repo_root / "deploy_artifacts" / "processed").exists():

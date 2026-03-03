@@ -43,8 +43,10 @@ def _get_prediction_options():
     """
     Fetch valid (ticker, date, horizon) options from GET /prediction_options.
     Cached in session_state["prediction_options"]. Returns None on failure or if backend unreachable.
+    On failure, session_state["prediction_options_error"] is set to a short reason for the UI.
     """
     if not _BACKEND_URL or not _check_backend():
+        st.session_state["prediction_options_error"] = "Backend not configured or unreachable. Set BACKEND_URL and run the API."
         return None
     if "prediction_options" not in st.session_state:
         try:
@@ -53,11 +55,19 @@ def _get_prediction_options():
                 timeout=_BACKEND_TIMEOUT,
             )
             if r.ok:
-                st.session_state["prediction_options"] = r.json()
+                data = r.json()
+                st.session_state["prediction_options"] = data
+                st.session_state["prediction_options_error"] = None
+                if not data.get("tickers") or not data.get("dates_by_ticker"):
+                    st.session_state["prediction_options_error"] = (
+                        "Backend returned no tickers/dates. Ensure processed data exists (e.g. deploy_artifacts/processed/<version>/features.csv)."
+                    )
             else:
                 st.session_state["prediction_options"] = None
-        except requests.RequestException:
+                st.session_state["prediction_options_error"] = f"Backend returned {r.status_code}. Try updating the API so it supports GET /prediction_options."
+        except requests.RequestException as e:
             st.session_state["prediction_options"] = None
+            st.session_state["prediction_options_error"] = f"Request failed: {e}"
     return st.session_state.get("prediction_options")
 
 
@@ -92,6 +102,8 @@ if st.sidebar.button("Recheck backend"):
         del st.session_state["backend_reachable"]
     if "prediction_options" in st.session_state:
         del st.session_state["prediction_options"]
+    if "prediction_options_error" in st.session_state:
+        del st.session_state["prediction_options_error"]
     st.rerun()
 st.sidebar.caption("Backend: `python run.py serve`")
 
@@ -200,10 +212,11 @@ if _BACKEND_URL:
                     except requests.RequestException as e:
                         st.error("Request failed: " + str(e))
         else:
-            st.caption(
-                "Prediction options (ticker, date, horizon) could not be loaded. "
+            err = st.session_state.get("prediction_options_error") or (
                 "Ensure the backend is running and supports `/prediction_options`, and that processed data exists."
             )
+            st.caption(err)
+            st.caption("Click **Recheck backend** and try again.")
 
 # BACKEND_URL must be set explicitly; if missing, show configuration error and skip all API calls.
 if not _BACKEND_URL:
@@ -615,10 +628,11 @@ else:
                             st.error(f"**Could not reach backend:** {e}")
                             st.caption(f"Ensure the API is running at {_BACKEND_URL} (e.g. `python run.py serve`).")
             else:
-                st.info(
-                    "Prediction options (ticker, date, horizon) could not be loaded. "
+                err = st.session_state.get("prediction_options_error") or (
                     "Ensure the backend is running and supports `/prediction_options`, and that processed data exists."
                 )
+                st.info(err)
+                st.caption("Click **Recheck backend** in the sidebar and try again.")
 
         elif page == "Fold Stability":
             st.header("Fold Stability")
