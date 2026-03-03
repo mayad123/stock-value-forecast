@@ -2,6 +2,7 @@
 
 from typing import Dict, List, Optional
 
+
 from pydantic import BaseModel, Field
 
 
@@ -52,4 +53,18 @@ class ModelInfoResponse(BaseModel):
     ticker_encoding_fingerprint: Optional[str] = Field(
         None,
         description="Fingerprint of the ticker encoding mapping (for train/serve consistency).",
+    )
+
+
+class PredictionOptionsResponse(BaseModel):
+    """Output from /prediction_options. Valid (ticker, date, horizon) choices for the UI."""
+
+    tickers: List[str] = Field(default_factory=list, description="Tickers that have processed feature rows.")
+    dates_by_ticker: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Per ticker, sorted list of as-of dates available in processed data.",
+    )
+    horizons: List[int] = Field(
+        default_factory=lambda: [1],
+        description="Horizon values (days) supported by the model (e.g. [1] for 1-day forward return).",
     )

@@ -39,6 +39,28 @@ def _check_backend() -> bool:
     return st.session_state.get("backend_reachable", False)
 
 
+def _get_prediction_options():
+    """
+    Fetch valid (ticker, date, horizon) options from GET /prediction_options.
+    Cached in session_state["prediction_options"]. Returns None on failure or if backend unreachable.
+    """
+    if not _BACKEND_URL or not _check_backend():
+        return None
+    if "prediction_options" not in st.session_state:
+        try:
+            r = requests.get(
+                f"{_BACKEND_URL.rstrip('/')}/prediction_options",
+                timeout=_BACKEND_TIMEOUT,
+            )
+            if r.ok:
+                st.session_state["prediction_options"] = r.json()
+            else:
+                st.session_state["prediction_options"] = None
+        except requests.RequestException:
+            st.session_state["prediction_options"] = None
+    return st.session_state.get("prediction_options")
+
+
 st.set_page_config(
     page_title="Stock Value Forecast — Evaluation",
     page_icon="📊",
@@ -68,104 +90,120 @@ st.sidebar.markdown("---")
 if st.sidebar.button("Recheck backend"):
     if "backend_reachable" in st.session_state:
         del st.session_state["backend_reachable"]
+    if "prediction_options" in st.session_state:
+        del st.session_state["prediction_options"]
     st.rerun()
 st.sidebar.caption("Backend: `python run.py serve`")
 
-# Try It — single prediction (one click = one POST /predict)
+# Try It — single prediction (one click = one POST /predict); options scoped to existing data
 if _BACKEND_URL:
     with st.sidebar.expander("Try It — single prediction"):
-        tryit_ticker = st.text_input("Ticker", value="AAPL", max_chars=10, key="tryit_ticker")
-        tryit_date = st.text_input("Date (YYYY-MM-DD)", value="2024-01-26", key="tryit_date")
-        tryit_clicked = st.button("Get prediction", key="tryit_btn")
-        if tryit_clicked:
-            t = (tryit_ticker or "").strip().upper()
-            d = (tryit_date or "").strip()
-            if not t or not d:
-                st.error("Ticker and date are required.")
+        opts = _get_prediction_options()
+        if opts and opts.get("tickers") and opts.get("dates_by_ticker"):
+            dates_by_ticker = opts["dates_by_ticker"]
+            tickers = [t for t in opts["tickers"] if dates_by_ticker.get(t)]
+            horizons = opts.get("horizons") or [1]
+            if not tickers:
+                st.caption("No tickers with processed data available.")
             else:
-                try:
-                    # One on-demand /predict call per click
-                    base = _BACKEND_URL.rstrip("/")
-                    r = requests.post(
-                        f"{base}/predict",
-                        json={"ticker": t, "as_of": d, "horizon": 1},
-                        timeout=_BACKEND_TIMEOUT,
-                    )
-                    if r.ok:
-                        data = r.json()
-                        pred_val = data.get("prediction", None)
-                        model_version = data.get("model_version") or "—"
+                tryit_ticker = st.selectbox("Ticker", options=tickers, key="tryit_ticker")
+                dates_for_ticker = dates_by_ticker.get(tryit_ticker, [])
+                tryit_date = st.selectbox(
+                    "Date",
+                    options=dates_for_ticker,
+                    key="tryit_date",
+                ) if dates_for_ticker else None
+                tryit_horizon = st.selectbox("Horizon (days)", options=horizons, key="tryit_horizon")
+                tryit_clicked = st.button("Get prediction", key="tryit_btn")
+                if tryit_clicked and tryit_date:
+                    t, d, h = tryit_ticker, tryit_date, tryit_horizon
+                    try:
+                        base = _BACKEND_URL.rstrip("/")
+                        r = requests.post(
+                            f"{base}/predict",
+                            json={"ticker": t, "as_of": d, "horizon": h},
+                            timeout=_BACKEND_TIMEOUT,
+                        )
+                        if r.ok:
+                            data = r.json()
+                            pred_val = data.get("prediction", None)
+                            model_version = data.get("model_version") or "—"
 
-                        # Best-effort fetch of current price (most recent <= as_of) via /prices
-                        price_current = None
-                        try:
-                            r_price = requests.get(
-                                f"{base}/prices",
-                                params={"ticker": t, "end_date": d},
-                                timeout=_BACKEND_TIMEOUT,
-                            )
-                            if r_price.ok:
-                                prices = r_price.json() if isinstance(r_price.json(), list) else []
-                                if prices:
-                                    # Take the last row (latest date <= as_of)
-                                    last = prices[-1]
-                                    if "adjusted_close" in last:
-                                        price_current = float(last["adjusted_close"])
-                                    elif "close" in last:
-                                        price_current = float(last["close"])
-                        except requests.RequestException:
+                            # Best-effort fetch of current price (most recent <= as_of) via /prices
                             price_current = None
-
-                        # Best-effort fetch of dataset version via /model_info
-                        dataset_version = "—"
-                        try:
-                            r_info = requests.get(f"{base}/model_info", timeout=_BACKEND_TIMEOUT)
-                            if r_info.ok:
-                                info = r_info.json()
-                                dataset_version = info.get("dataset_version", "—")
-                        except requests.RequestException:
-                            dataset_version = "—"
-
-                        st.success("Prediction received.")
-
-                        # Compute implied next-day price if we have both prediction and current price
-                        price_next = None
-                        if isinstance(pred_val, (int, float)) and price_current is not None:
                             try:
-                                price_next = price_current * (1.0 + float(pred_val))
-                            except Exception:
-                                price_next = None
-
-                        # Display: current price, predicted return (as %), implied next-day price
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            if price_current is not None:
-                                st.metric("Current price", f"{price_current:,.2f}")
-                            else:
-                                st.metric("Current price", "N/A")
-                            if isinstance(pred_val, (int, float)):
-                                st.metric(
-                                    "Predicted 1-day simple return",
-                                    f"{float(pred_val) * 100:.2f}%",
+                                r_price = requests.get(
+                                    f"{base}/prices",
+                                    params={"ticker": t, "end_date": d},
+                                    timeout=_BACKEND_TIMEOUT,
                                 )
-                            else:
-                                st.metric("Predicted 1-day simple return", "N/A")
-                        with c2:
-                            if price_next is not None:
-                                st.metric("Implied next-day price", f"{price_next:,.2f}")
-                            else:
-                                st.metric("Implied next-day price", "N/A")
-                            st.caption(f"Model version: {model_version}")
-                            st.caption(f"Dataset version: {dataset_version}")
-                    else:
-                        try:
-                            err = r.json()
-                            detail = err.get("detail", r.text)
-                        except Exception:
-                            detail = r.text or f"Status {r.status_code}"
-                        st.error("Error: " + (detail[:300] if isinstance(detail, str) else str(detail)[:300]))
-                except requests.RequestException as e:
-                    st.error("Request failed: " + str(e))
+                                if r_price.ok:
+                                    prices = r_price.json() if isinstance(r_price.json(), list) else []
+                                    if prices:
+                                        # Take the last row (latest date <= as_of)
+                                        last = prices[-1]
+                                        if "adjusted_close" in last:
+                                            price_current = float(last["adjusted_close"])
+                                        elif "close" in last:
+                                            price_current = float(last["close"])
+                            except requests.RequestException:
+                                price_current = None
+
+                            # Best-effort fetch of dataset version via /model_info
+                            dataset_version = "—"
+                            try:
+                                r_info = requests.get(f"{base}/model_info", timeout=_BACKEND_TIMEOUT)
+                                if r_info.ok:
+                                    info = r_info.json()
+                                    dataset_version = info.get("dataset_version", "—")
+                            except requests.RequestException:
+                                dataset_version = "—"
+
+                            st.success("Prediction received.")
+
+                            # Compute implied next-day price if we have both prediction and current price
+                            price_next = None
+                            if isinstance(pred_val, (int, float)) and price_current is not None:
+                                try:
+                                    price_next = price_current * (1.0 + float(pred_val))
+                                except Exception:
+                                    price_next = None
+
+                            # Display: current price, predicted return (as %), implied next-day price
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                if price_current is not None:
+                                    st.metric("Current price", f"{price_current:,.2f}")
+                                else:
+                                    st.metric("Current price", "N/A")
+                                if isinstance(pred_val, (int, float)):
+                                    st.metric(
+                                        "Predicted 1-day simple return",
+                                        f"{float(pred_val) * 100:.2f}%",
+                                    )
+                                else:
+                                    st.metric("Predicted 1-day simple return", "N/A")
+                            with c2:
+                                if price_next is not None:
+                                    st.metric("Implied next-day price", f"{price_next:,.2f}")
+                                else:
+                                    st.metric("Implied next-day price", "N/A")
+                                st.caption(f"Model version: {model_version}")
+                                st.caption(f"Dataset version: {dataset_version}")
+                        else:
+                            try:
+                                err = r.json()
+                                detail = err.get("detail", r.text)
+                            except Exception:
+                                detail = r.text or f"Status {r.status_code}"
+                            st.error("Error: " + (detail[:300] if isinstance(detail, str) else str(detail)[:300]))
+                    except requests.RequestException as e:
+                        st.error("Request failed: " + str(e))
+        else:
+            st.caption(
+                "Prediction options (ticker, date, horizon) could not be loaded. "
+                "Ensure the backend is running and supports `/prediction_options`, and that processed data exists."
+            )
 
 # BACKEND_URL must be set explicitly; if missing, show configuration error and skip all API calls.
 if not _BACKEND_URL:
@@ -515,58 +553,72 @@ else:
             st.header("Prediction Explorer")
             st.markdown(
                 "Run a single prediction for a ticker and as-of date; the backend looks up features from processed data and returns a trend score. "
-                "This demonstrates **serving** the trained model with the same schema used in training, and keeps **reproducibility** explicit (model version and inputs are shown in the response)."
+                "This demonstrates **serving** the trained model with the same schema used in training, and keeps **reproducibility** explicit (model version and inputs are shown in the response). "
+                "Choices are limited to tickers, dates, and horizons that exist in the processed data."
             )
             st.divider()
-    
-            with st.form("predict_form"):
-                ticker = st.text_input("Ticker", value="AAPL", max_chars=10, help="Stock symbol (e.g. AAPL, MSFT)")
-                as_of = st.text_input("Date", value="2024-01-26", help="As-of date for features (YYYY-MM-DD)")
-                horizon = st.number_input("Horizon (days)", min_value=1, max_value=30, value=1)
-                submitted = st.form_submit_button("Get prediction")
-    
-            if submitted:
-                ticker = (ticker or "").strip().upper()
-                as_of = (as_of or "").strip()
-                if not ticker or not as_of:
-                    st.error("Please provide both Ticker and Date.")
+
+            opts = _get_prediction_options()
+            if opts and opts.get("tickers") and opts.get("dates_by_ticker"):
+                dates_by_ticker = opts["dates_by_ticker"]
+                tickers = [t for t in opts["tickers"] if dates_by_ticker.get(t)]
+                horizons = opts.get("horizons") or [1]
+                if not tickers:
+                    st.info("No tickers with processed data available.")
                 else:
-                    try:
-                        with st.spinner("Calling prediction API…"):
-                            r = requests.post(
-                                f"{_BACKEND_URL.rstrip('/')}/predict",
-                                json={"ticker": ticker, "as_of": as_of, "horizon": horizon},
-                                timeout=_BACKEND_TIMEOUT,
-                            )
-                        if r.ok:
-                            data = r.json()
-                            st.success("Prediction returned successfully.")
-                            st.metric("Predicted value (trend score)", data.get("prediction", "—"))
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                st.metric("Confidence", data.get("confidence", "—"))
-                                st.caption("Model version: " + (data.get("model_version") or "—"))
-                            with c2:
-                                st.caption(f"Ticker: {data.get('ticker', '—')}")
-                                st.caption(f"As-of date: {data.get('as_of', '—')}")
-                                st.caption(f"Horizon: {data.get('horizon', '—')} day(s)")
-                            with st.expander("Full response"):
-                                st.json(data)
-                        else:
-                            st.error("**Backend returned an error.**")
-                            st.markdown(f"- **Status:** {r.status_code}")
-                            try:
-                                err_body = r.json()
-                                st.markdown("- **Response:**")
-                                st.json(err_body)
-                            except Exception:
-                                if r.text:
-                                    st.code(r.text[:500], language="text")
-                            st.caption("Check that ticker and date exist in processed data (e.g. run demo and use a date within the sample range).")
-                    except requests.RequestException as e:
-                        st.session_state["backend_reachable"] = False
-                        st.error(f"**Could not reach backend:** {e}")
-                        st.caption(f"Ensure the API is running at {_BACKEND_URL} (e.g. `python run.py serve`).")
+                    with st.form("predict_form"):
+                        ticker = st.selectbox("Ticker", options=tickers, key="pex_ticker")
+                        dates_for_ticker = dates_by_ticker.get(ticker, [])
+                        as_of = st.selectbox(
+                            "Date",
+                            options=dates_for_ticker,
+                            key="pex_date",
+                        ) if dates_for_ticker else None
+                        horizon = st.selectbox("Horizon (days)", options=horizons, key="pex_horizon")
+                        submitted = st.form_submit_button("Get prediction")
+
+                    if submitted and as_of:
+                        try:
+                            with st.spinner("Calling prediction API…"):
+                                r = requests.post(
+                                    f"{_BACKEND_URL.rstrip('/')}/predict",
+                                    json={"ticker": ticker, "as_of": as_of, "horizon": horizon},
+                                    timeout=_BACKEND_TIMEOUT,
+                                )
+                            if r.ok:
+                                data = r.json()
+                                st.success("Prediction returned successfully.")
+                                st.metric("Predicted value (trend score)", data.get("prediction", "—"))
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.metric("Confidence", data.get("confidence", "—"))
+                                    st.caption("Model version: " + (data.get("model_version") or "—"))
+                                with c2:
+                                    st.caption(f"Ticker: {data.get('ticker', '—')}")
+                                    st.caption(f"As-of date: {data.get('as_of', '—')}")
+                                    st.caption(f"Horizon: {data.get('horizon', '—')} day(s)")
+                                with st.expander("Full response"):
+                                    st.json(data)
+                            else:
+                                st.error("**Backend returned an error.**")
+                                st.markdown(f"- **Status:** {r.status_code}")
+                                try:
+                                    err_body = r.json()
+                                    st.markdown("- **Response:**")
+                                    st.json(err_body)
+                                except Exception:
+                                    if r.text:
+                                        st.code(r.text[:500], language="text")
+                                st.caption("Check that ticker and date exist in processed data (e.g. run demo and use a date within the sample range).")
+                        except requests.RequestException as e:
+                            st.session_state["backend_reachable"] = False
+                            st.error(f"**Could not reach backend:** {e}")
+                            st.caption(f"Ensure the API is running at {_BACKEND_URL} (e.g. `python run.py serve`).")
+            else:
+                st.info(
+                    "Prediction options (ticker, date, horizon) could not be loaded. "
+                    "Ensure the backend is running and supports `/prediction_options`, and that processed data exists."
+                )
 
         elif page == "Fold Stability":
             st.header("Fold Stability")

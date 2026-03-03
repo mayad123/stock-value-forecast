@@ -124,6 +124,25 @@ def test_model_info(serve_client):
     assert "ticker_encoding_fingerprint" in data
 
 
+def test_prediction_options(serve_client):
+    """GET /prediction_options returns tickers, dates_by_ticker, and horizons from processed data."""
+    r = serve_client.get("/prediction_options")
+    assert r.status_code == 200
+    data = r.json()
+    assert "tickers" in data
+    assert "dates_by_ticker" in data
+    assert "horizons" in data
+    assert isinstance(data["tickers"], list)
+    assert isinstance(data["dates_by_ticker"], dict)
+    assert isinstance(data["horizons"], list)
+    assert len(data["horizons"]) >= 1
+    # With demo data, we expect at least one ticker and dates
+    if data["tickers"]:
+        t = data["tickers"][0]
+        assert t in data["dates_by_ticker"]
+        assert isinstance(data["dates_by_ticker"][t], list)
+
+
 def test_predict(serve_client):
     r = serve_client.post(
         "/predict",

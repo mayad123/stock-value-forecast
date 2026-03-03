@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 
-from src.serve.schemas import ModelInfoResponse, PredictRequest, PredictResponse
+from src.serve.schemas import ModelInfoResponse, PredictRequest, PredictResponse, PredictionOptionsResponse
 
 # Resolved at startup (paths relative to repo root)
 _repo_root: Path = Path(__file__).resolve().parents[2]
@@ -263,6 +263,38 @@ def predict(req: PredictRequest) -> PredictResponse:
         as_of=used_date,
         horizon=horizon,
         model_version=_run_id,
+    )
+
+
+@app.get("/prediction_options", response_model=PredictionOptionsResponse)
+def prediction_options() -> PredictionOptionsResponse:
+    """
+    Return valid (ticker, date, horizon) choices for prediction UIs.
+    Tickers and dates are derived from processed features; horizons from the trained model target.
+    """
+    if _run_record is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    tickers_list = sorted(_ticker_to_idx.keys()) if _ticker_to_idx else []
+    dates_by_ticker: Dict[str, List[str]] = {}
+    if _features_df is not None and not _features_df.empty and "ticker" in _features_df.columns and "date" in _features_df.columns:
+        for t in tickers_list:
+            subset = _features_df[_features_df["ticker"].astype(str).str.upper() == t.upper()]
+            if not subset.empty:
+                dates = sorted(subset["date"].astype(str).unique().tolist())
+                dates_by_ticker[t] = dates
+        # If no ticker encoding, use all unique (ticker, date) from features
+        if not tickers_list and "ticker" in _features_df.columns:
+            for t in _features_df["ticker"].astype(str).str.upper().unique().tolist():
+                subset = _features_df[_features_df["ticker"].astype(str).str.upper() == t]
+                dates_by_ticker[t] = sorted(subset["date"].astype(str).unique().tolist())
+            tickers_list = sorted(dates_by_ticker.keys())
+    target_cfg = _run_record.get("target") or {}
+    horizon_days = int(target_cfg.get("horizon_days", 1))
+    horizons = [horizon_days] if horizon_days >= 1 else [1]
+    return PredictionOptionsResponse(
+        tickers=tickers_list,
+        dates_by_ticker=dates_by_ticker,
+        horizons=horizons,
     )
 
 
