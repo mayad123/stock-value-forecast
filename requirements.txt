@@ -9,8 +9,8 @@ pandas>=1.5.0
 numpy>=1.20.0
 scikit-learn>=1.0.0
 
-# Training (TensorFlow 2.x; 2.10+ for SavedModel and Keras compatibility)
-tensorflow>=2.10
+# Training (TensorFlow 2.x; pinned for tf.keras-only serialization)
+tensorflow>=2.15,<2.16
 
 # Serving (production-style API)
 fastapi>=0.100.0

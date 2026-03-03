@@ -328,11 +328,13 @@ def run_training(
         "return_type": "simple",          # adj.shift(-h)/adj - 1.0
         "scaling": None,                  # no additional scaling applied
     }
+    tensorflow_version = tf.__version__
     run_record = {
         "run_id": run_id,
         "config_hash": config_hash,
         "config_path": rel_config_path,
         "git_commit_hash": git_commit_hash,
+        "tensorflow_version": tensorflow_version,
         "random_seeds": random_seeds,
         "model_input_shape": model_input_shape,
         "config": {

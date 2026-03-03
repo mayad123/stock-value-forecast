@@ -148,10 +148,8 @@ if _BACKEND_URL:
                                     "Predicted 1-day simple return",
                                     f"{float(pred_val) * 100:.2f}%",
                                 )
-                                st.caption("Predicted 1-day simple return (not a probability).")
                             else:
                                 st.metric("Predicted 1-day simple return", "N/A")
-                                st.caption("Predicted 1-day simple return (not a probability).")
                         with c2:
                             if price_next is not None:
                                 st.metric("Implied next-day price", f"{price_next:,.2f}")
@@ -741,7 +739,8 @@ else:
                     with c1:
                         sel_ticker = st.selectbox("Ticker", options=tickers, index=0)
                     with c2:
-                        default_models = ["tensorflow"] if "tensorflow" in model_names else model_names
+                        # Default to all models; user can narrow down to a specific one
+                        default_models = model_names
                         sel_models = st.multiselect(
                             "Models (backtest)",
                             options=model_names,
