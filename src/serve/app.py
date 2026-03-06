@@ -117,6 +117,11 @@ def _load_artifacts() -> None:
     _schema_fingerprint = _compute_schema_fingerprint(_feature_columns)
     dataset_version = _run_record.get("dataset_version", "")
     features_path = _processed_path / dataset_version / "features.csv"
+    if not features_path.exists():
+        # Fallback for demo: use deploy_artifacts processed data when primary path missing
+        fallback = _repo_root / "deploy_artifacts" / "processed" / dataset_version / "features.csv"
+        if fallback.exists():
+            features_path = fallback
     if features_path.exists():
         _features_df = pd.read_csv(features_path)
         _features_df["date"] = _features_df["date"].astype(str)
@@ -328,10 +333,20 @@ def model_info() -> ModelInfoResponse:
 # ----- Read-only data endpoints (no external APIs, no ingestion/training) -----
 
 
+def _reports_file_path(filename: str) -> Path:
+    """Return path to a report file, falling back to deploy_artifacts/reports if primary missing."""
+    path = _reports_path / filename
+    if not path.exists():
+        fallback = _repo_root / "deploy_artifacts" / "reports" / filename
+        if fallback.exists():
+            return fallback
+    return path
+
+
 @app.get("/metrics")
 def get_metrics() -> Dict[str, Any]:
     """Return contents of reports/latest_metrics.json. Read-only."""
-    path = _reports_path / "latest_metrics.json"
+    path = _reports_file_path("latest_metrics.json")
     if not path.exists():
         raise HTTPException(status_code=404, detail="Metrics file not found. Run a backtest to generate it.")
     with open(path) as f:
@@ -344,7 +359,7 @@ def get_predictions(
     model_name: Optional[str] = Query(None, description="Filter by model name"),
 ) -> List[Dict[str, Any]]:
     """Return contents of reports/latest_predictions.csv as JSON. Optional filters: ticker, model_name. Read-only."""
-    path = _reports_path / "latest_predictions.csv"
+    path = _reports_file_path("latest_predictions.csv")
     if not path.exists():
         raise HTTPException(status_code=404, detail="Predictions file not found. Run a backtest to generate it.")
     df = pd.read_csv(path)

@@ -1,0 +1,15 @@
+{
+  "dataset_version": "demo",
+  "models": {
+    "naive": {
+      "mse": 0.001,
+      "mae": 0.02,
+      "n_samples": 6
+    },
+    "heuristic": {
+      "mse": 0.0012,
+      "mae": 0.022,
+      "n_samples": 6
+    }
+  }
+}
