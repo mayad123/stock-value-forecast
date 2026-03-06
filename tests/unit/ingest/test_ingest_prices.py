@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from src.ingest.alphavantage import AlphaVantageError, get_api_key, fetch_daily_raw AlphaVantageError, get_api_key, fetch_daily_raw
+from src.ingest.alphavantage import AlphaVantageError, get_api_key, fetch_daily_raw
 from src.ingest.prices import (
     _merge_ticker_history,
     _parse_time_series,

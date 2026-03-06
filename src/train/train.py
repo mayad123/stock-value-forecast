@@ -39,7 +39,8 @@ from src.core.paths import get_paths, repo_root
 from src.eval.baselines import get_baseline_predictions, list_baseline_names
 from src.eval.metrics import compute_metrics
 from src.features.price_features import FEATURE_NAMES, TARGET_NAME
-from src.train.data import load_feature_manifest, load_train_val, resolve_processed_version, get_X_y
+from src.data.versioning import resolve_processed_version
+from src.train.data import load_feature_manifest, load_train_val, get_X_y
 from src.train.model import build_model
 
 TICKER_COL = "ticker"
