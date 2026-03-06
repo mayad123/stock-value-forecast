@@ -12,7 +12,9 @@ def format_metric_value(v: Any) -> Any:
     """Display value for a metric: round float, or 'N/A' for None/NaN."""
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return "N/A"
-    return round(v, 6) if isinstance(v, float) else v
+    if isinstance(v, (int, float)):
+        return round(float(v), 6)
+    return v
 
 
 def metrics_table_rows(models: Dict[str, Any], metric_keys: List[str]) -> List[Dict[str, Any]]:
@@ -88,13 +90,23 @@ def aggregate_mean_std_rows(
         for metric_key, stats in (metrics or {}).items():
             if isinstance(stats, dict) and "mean" in stats and "std" in stats:
                 mean_v, std_v = stats["mean"], stats["std"]
-                if not (isinstance(mean_v, float) and math.isnan(mean_v)):
-                    rows.append({
-                        "Model": model_name,
-                        "Metric": metric_key,
-                        "Mean": round(mean_v, 6),
-                        "Std": round(std_v, 6),
-                    })
+                if mean_v is None or std_v is None:
+                    continue
+                if isinstance(mean_v, float) and math.isnan(mean_v):
+                    continue
+                if isinstance(std_v, float) and math.isnan(std_v):
+                    continue
+                try:
+                    mean_rounded = round(float(mean_v), 6)
+                    std_rounded = round(float(std_v), 6)
+                except (TypeError, ValueError):
+                    continue
+                rows.append({
+                    "Model": model_name,
+                    "Metric": metric_key,
+                    "Mean": mean_rounded,
+                    "Std": std_rounded,
+                })
     return rows
 
 

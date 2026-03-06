@@ -1,15 +1,46 @@
 {
-  "dataset_version": "demo",
+  "dataset_version": "demo_real_v1",
+  "train_end": "2023-12-31",
+  "val_start": "2024-01-01",
+  "val_end": "2024-06-30",
+  "test_start": "2024-07-01",
+  "n_test": null,
   "models": {
     "naive": {
-      "mse": 0.001,
-      "mae": 0.02,
-      "n_samples": 6
+      "mse": 0.0004499672,
+      "rmse": 0.0212124302,
+      "mae": 0.013944294,
+      "r2": -0.0095578657,
+      "directional_accuracy": 0.003226,
+      "ic": 0.0,
+      "n_samples": 620
     },
     "heuristic": {
-      "mse": 0.0012,
-      "mae": 0.022,
-      "n_samples": 6
+      "mse": 0.0009262488,
+      "rmse": 0.0304343366,
+      "mae": 0.0205937995,
+      "r2": -1.0781555099,
+      "directional_accuracy": 0.506452,
+      "ic": -0.031688,
+      "n_samples": 620
+    },
+    "simple_ml": {
+      "mse": 0.0004488817,
+      "rmse": 0.0211868295,
+      "mae": 0.0139003412,
+      "r2": -0.007122526,
+      "directional_accuracy": 0.506452,
+      "ic": 0.008074,
+      "n_samples": 620
+    },
+    "tensorflow": {
+      "mse": 0.0004631501,
+      "rmse": 0.0215209226,
+      "mae": 0.0142519003,
+      "r2": -0.0391353935,
+      "directional_accuracy": 0.520968,
+      "ic": 0.011533,
+      "n_samples": 620
     }
   }
 }

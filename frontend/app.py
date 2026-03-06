@@ -22,6 +22,17 @@ _METRICS_FILE_MISSING_MSG = (
     "Metrics file not found. Run a backtest to generate it (e.g. `make demo` or `python run.py backtest`). "
     "Expected: reports/latest_metrics.json."
 )
+# Backtest always emits these; ensure TensorFlow row shows even when metrics are null (e.g. TF not run)
+_EXPECTED_MODEL_ORDER = ["naive", "heuristic", "simple_ml", "tensorflow"]
+
+
+def _models_with_expected_keys(models: dict) -> dict:
+    """Merge API models with expected keys so tensorflow (and others) always appear; missing = None → N/A."""
+    out = {name: models.get(name) for name in _EXPECTED_MODEL_ORDER}
+    for k, v in (models or {}).items():
+        if k not in out:
+            out[k] = v
+    return out
 
 
 def _backend_ok() -> bool:
@@ -75,7 +86,8 @@ def _page_evaluation():
 
     metrics_data = metrics_data if isinstance(metrics_data, dict) else {}
     predictions_data = predictions_data if isinstance(predictions_data, list) else []
-    models = (metrics_data or {}).get("models") or {}
+    models_raw = (metrics_data or {}).get("models") or {}
+    models = _models_with_expected_keys(models_raw)
     folds = (metrics_data or {}).get("folds") or []
     aggregate = (metrics_data or {}).get("aggregate") or {}
 
@@ -225,7 +237,8 @@ def _page_model_overview():
 
     # Aggregate metrics
     st.subheader("Aggregate evaluation metrics")
-    models = metrics_data.get("models") or {}
+    models_raw = metrics_data.get("models") or {}
+    models = _models_with_expected_keys(models_raw)
     if not models:
         st.info("No model metrics in latest_metrics.json (empty backtest?).")
     else:
