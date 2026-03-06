@@ -9,8 +9,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from src.core.artifacts import resolve_run_dir
+from src.core.paths import get_paths
+from src.data.versioning import resolve_processed_version
 from src.eval.baselines import get_baseline_predictions, list_baseline_names
 from src.eval.metrics import compute_metrics
+
+__all__ = ["run_backtest"]
 
 
 def _target_date_from_asof(config: Dict[str, Any], asof_date: str) -> str:
@@ -19,23 +24,6 @@ def _target_date_from_asof(config: Dict[str, Any], asof_date: str) -> str:
     days = int(fw.get("forward_return_days", 1))
     d = pd.to_datetime(asof_date)
     return (d + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
-
-
-def resolve_processed_version(processed_root: Path, version_hint: str = "latest") -> str:
-    """Resolve processed dataset version. 'latest' -> lexicographically last dir with features.csv."""
-    if not processed_root.exists():
-        raise FileNotFoundError(f"Processed root not found: {processed_root}")
-
-    if version_hint != "latest":
-        features_path = processed_root / version_hint / "features.csv"
-        if features_path.exists():
-            return version_hint
-        raise FileNotFoundError(f"Processed version not found: {version_hint}")
-
-    subdirs = [d.name for d in processed_root.iterdir() if d.is_dir() and (d / "features.csv").exists()]
-    if not subdirs:
-        raise FileNotFoundError(f"No processed datasets with features.csv in {processed_root}")
-    return sorted(subdirs)[-1]
 
 
 def _evaluate_tensorflow_if_available(
@@ -53,18 +41,10 @@ def _evaluate_tensorflow_if_available(
         from src.train.load import load_trained_model, predict_with_trained_model
     except Exception:
         return None, None
-    if not models_path.exists():
-        return None, None
-    run_id = config.get("eval", {}).get("tensorflow_run_id", "").strip() or None
-    if run_id:
-        run_dir = models_path / run_id
-    else:
-        candidates = [d.name for d in models_path.iterdir() if d.is_dir() and d.name.startswith(dataset_version + "_")]
-        if not candidates:
-            return None, None
-        run_dir = models_path / sorted(candidates)[-1]
-    has_model = (run_dir / "model.keras").exists() or (run_dir / "saved_model").exists()
-    if not has_model or not (run_dir / "run_record.json").exists():
+    run_id_hint = config.get("eval", {}).get("tensorflow_run_id", "").strip() or None
+    try:
+        run_dir = resolve_run_dir(models_path, dataset_version, run_id_hint=run_id_hint)
+    except FileNotFoundError:
         return None, None
     try:
         model, record = load_trained_model(run_dir)
@@ -203,20 +183,16 @@ def run_backtest(
     Returns the summary/artifact dict and writes to reports/.
     """
     if log is None:
+        from src.logging_config import get_logger
+        _log = get_logger("backtest")
         def log(msg: str) -> None:
-            print(f"[BACKTEST] {msg}")
+            _log.info("%s", msg)
 
-    paths_cfg = config.get("paths", {})
-    repo_root = Path(__file__).resolve().parents[2]
-    processed_path = processed_root or (repo_root / paths_cfg.get("data_processed", "data/processed"))
-    if not processed_path.is_absolute():
-        processed_path = repo_root / processed_path
-    reports_path = repo_root / paths_cfg.get("reports", "reports")
-    if not reports_path.is_absolute():
-        reports_path = repo_root / reports_path
-    models_path = repo_root / paths_cfg.get("models", "models")
-    if not models_path.is_absolute():
-        models_path = repo_root / models_path
+    paths = get_paths(config)
+    processed_path = processed_root or paths["processed_path"]
+    reports_path = paths["reports_path"]
+    models_path = paths["models_path"]
+    repo_root = paths["repo_root"]
 
     dataset_version = resolve_processed_version(processed_path, dataset_version_hint)
     log(f"Processed dataset version: {dataset_version}")
@@ -269,16 +245,13 @@ def run_backtest(
                 "artifact_path": rel_artifact_path,
             }
 
-            run_id = (config.get("eval") or {}).get("tensorflow_run_id", "").strip() or None
-            if not run_id and models_path.exists():
-                candidates = [
-                    d.name
-                    for d in models_path.iterdir()
-                    if d.is_dir() and d.name.startswith(dataset_version + "_")
-                ]
-                run_id = sorted(candidates)[-1] if candidates else None
-            if run_id:
-                run_dir = models_path / run_id
+            run_id_hint = (config.get("eval") or {}).get("tensorflow_run_id", "").strip() or None
+            try:
+                run_dir = resolve_run_dir(models_path, dataset_version, run_id_hint=run_id_hint)
+            except FileNotFoundError:
+                run_dir = None
+            if run_dir is not None:
+                run_id = run_dir.name
                 rr_path = run_dir / "run_record.json"
                 if rr_path.exists():
                     with open(rr_path) as f:

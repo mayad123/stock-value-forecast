@@ -7,21 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from src.data.versioning import resolve_processed_version
 from src.features.price_features import FEATURE_NAMES, TARGET_NAME
-
-
-def resolve_processed_version(processed_root: Path, version_hint: str = "latest") -> str:
-    """Resolve processed dataset version (same logic as eval)."""
-    if not processed_root.exists():
-        raise FileNotFoundError(f"Processed root not found: {processed_root}")
-    if version_hint != "latest":
-        if (processed_root / version_hint / "features.csv").exists():
-            return version_hint
-        raise FileNotFoundError(f"Processed version not found: {version_hint}")
-    subdirs = [d.name for d in processed_root.iterdir() if d.is_dir() and (d / "features.csv").exists()]
-    if not subdirs:
-        raise FileNotFoundError(f"No processed datasets in {processed_root}")
-    return sorted(subdirs)[-1]
 
 
 def load_train_val(

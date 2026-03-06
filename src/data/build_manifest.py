@@ -26,13 +26,16 @@ def run_build_manifest(
     Returns the manifest path.
     """
     if log is None:
+        from src.logging_config import get_logger
+        _log = get_logger("build-manifest")
         def log(msg: str) -> None:
-            print(f"[BUILD-MANIFEST] {msg}")
+            _log.info("%s", msg)
 
-    repo_root = Path(__file__).resolve().parents[2]
+    from src.core.paths import repo_root
+    root = repo_root()
     paths_cfg = config.get("paths", {})
     data_raw = paths_cfg.get("data_raw", "data/sample")
-    raw_root = raw_root or (repo_root / data_raw if not Path(data_raw).is_absolute() else Path(data_raw))
+    raw_root = raw_root or (root / data_raw if not Path(data_raw).is_absolute() else Path(data_raw))
     raw_root = raw_root.resolve()
 
     return generate_manifest(raw_root, dataset_version, prices_subdir=prices_subdir, log=log)

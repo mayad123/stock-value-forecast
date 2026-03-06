@@ -46,8 +46,10 @@ def generate_manifest(
     Returns the manifest path. All referenced paths are verified to exist.
     """
     if log is None:
+        from src.logging_config import get_logger
+        _log = get_logger("manifest")
         def log(msg: str) -> None:
-            print(f"[MANIFEST] {msg}")
+            _log.info("%s", msg)
 
     raw_root = Path(raw_root).resolve()
     prices_dir = raw_root / prices_subdir

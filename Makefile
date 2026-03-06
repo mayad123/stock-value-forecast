@@ -1,7 +1,7 @@
 # Pipeline: two explicit workflows (demo | live | demo-real) and single-stage targets
 # Usage: make | make help | make demo | make demo-real | make live | make ingest | ...
-# Use venv: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
-# Then: make demo-real  (or PYTHON=./venv/bin/python make demo-real)
+# Setup: python3 -m venv venv && source venv/bin/activate && pip install -e ".[dev]"
+# Or: pip install -r requirements.txt (runtime only); pip install -r requirements-dev.txt (with lint/test).
 
 PYTHON ?= python
 
@@ -34,7 +34,7 @@ test:
 	$(PYTHON) -m pytest tests/ -v --tb=short
 
 test-integration:
-	$(PYTHON) -m pytest tests/test_integration_e2e.py::test_e2e_build_features_produces_valid_artifacts_no_leakage -v --tb=short
+	$(PYTHON) -m pytest tests/e2e/test_integration_e2e.py::test_e2e_build_features_produces_valid_artifacts_no_leakage -v --tb=short
 
 # Demo: recruiter_demo.yaml only; never runs ingest
 demo:

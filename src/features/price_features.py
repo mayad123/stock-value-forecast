@@ -208,18 +208,21 @@ def run_build_features(
     Returns processed dataset version (same as raw_dataset_version for 1:1 link).
     """
     if log is None:
+        from src.logging_config import get_logger
+        _log = get_logger("build-features")
         def log(msg: str) -> None:
-            print(f"[BUILD-FEATURES] {msg}")
+            _log.info("%s", msg)
 
+    from src.core.paths import repo_root
     paths_cfg = config.get("paths", {})
-    repo_root = Path(__file__).resolve().parents[2]
-    raw_root = raw_root or (repo_root / paths_cfg.get("data_raw", "data/raw"))
+    root = repo_root()
+    raw_root = raw_root or (root / paths_cfg.get("data_raw", "data/raw"))
     if not raw_root.is_absolute():
-        raw_root = repo_root / raw_root
+        raw_root = root / raw_root
 
-    processed_path = processed_root or (repo_root / paths_cfg.get("data_processed", "data/processed"))
+    processed_path = processed_root or (root / paths_cfg.get("data_processed", "data/processed"))
     if not processed_path.is_absolute():
-        processed_path = repo_root / processed_path
+        processed_path = root / processed_path
 
     raw_version_hint = config.get("feature_build", {}).get("raw_dataset_version", "latest")
     try:

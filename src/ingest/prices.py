@@ -10,13 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Allow running from repo root
-import sys
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from src.ingest.alphavantage import (  # noqa: E402
+from src.core.paths import repo_root
+from src.ingest.alphavantage import (
     AlphaVantageError,
     fetch_daily_raw,
     get_api_key,
@@ -147,17 +142,18 @@ def run_ingest_prices(
     Returns dataset_version (ingestion timestamp string).
     """
     if config.get("mode") == "recruiter_demo":
-        print("Demo mode uses sample data. Use live_apis mode for ingestion.", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError("Demo mode uses sample data. Use live_apis mode for ingestion.")
 
     if log is None:
+        from src.logging_config import get_logger
+        _log = get_logger("ingest")
         def log(msg: str) -> None:
-            print(f"[INGEST] {msg}")
+            _log.info("%s", msg)
 
     paths_cfg = config.get("paths", {})
     raw_root = data_raw_root or Path(paths_cfg.get("data_raw", "data/raw"))
     if not raw_root.is_absolute():
-        raw_root = _REPO_ROOT / raw_root
+        raw_root = repo_root() / raw_root
 
     tickers = config.get("tickers", {}).get("symbols", [])
     if not tickers:

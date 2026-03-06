@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
+from src.core.artifacts import resolve_run_dir
 from src.eval.baselines import get_baseline_predictions, list_baseline_names
 from src.eval.metrics import compute_metrics
 
@@ -32,18 +33,10 @@ def _evaluate_tf(
         from src.train.load import load_trained_model, predict_with_trained_model
     except Exception:
         return None
-    run_id = config.get("eval", {}).get("tensorflow_run_id", "").strip() or None
-    if run_id:
-        run_dir = models_path / run_id
-    else:
-        if not models_path.exists():
-            return None
-        candidates = [d.name for d in models_path.iterdir() if d.is_dir() and d.name.startswith(dataset_version + "_")]
-        if not candidates:
-            return None
-        run_dir = models_path / sorted(candidates)[-1]
-    has_model = (run_dir / "model.keras").exists() or (run_dir / "saved_model").exists()
-    if not has_model or not (run_dir / "run_record.json").exists():
+    run_id_hint = config.get("eval", {}).get("tensorflow_run_id", "").strip() or None
+    try:
+        run_dir = resolve_run_dir(models_path, dataset_version, run_id_hint=run_id_hint)
+    except FileNotFoundError:
         return None
     try:
         model, record = load_trained_model(run_dir)
@@ -229,18 +222,13 @@ def run_walk_forward(
         if tf_m is not None:
             try:
                 from src.train.load import load_trained_model, predict_with_trained_model
-                run_id = config.get("eval", {}).get("tensorflow_run_id", "").strip() or None
-                if not run_id and models_path.exists():
-                    candidates = [d.name for d in models_path.iterdir() if d.is_dir() and d.name.startswith(dataset_version + "_")]
-                    run_id = sorted(candidates)[-1] if candidates else None
-                if run_id:
-                    model, record = load_trained_model(models_path / run_id)
-                    y_pred_tf = predict_with_trained_model(model, record, subset)
-                    all_y_pred["tensorflow"].extend(y_pred_tf.tolist())
-                    fold_y_preds["tensorflow"] = y_pred_tf
-                else:
-                    fold_y_preds["tensorflow"] = None
-            except Exception:
+                run_id_hint = config.get("eval", {}).get("tensorflow_run_id", "").strip() or None
+                run_dir = resolve_run_dir(models_path, dataset_version, run_id_hint=run_id_hint)
+                model, record = load_trained_model(run_dir)
+                y_pred_tf = predict_with_trained_model(model, record, subset)
+                all_y_pred["tensorflow"].extend(y_pred_tf.tolist())
+                fold_y_preds["tensorflow"] = y_pred_tf
+            except (FileNotFoundError, Exception):
                 fold_y_preds["tensorflow"] = None
         else:
             fold_y_preds["tensorflow"] = None

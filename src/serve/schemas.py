@@ -1,7 +1,6 @@
-"""Request/response schemas for the prediction API."""
+"""Request/response schemas for the prediction API. All API boundaries use these models."""
 
-from typing import Dict, List, Optional
-
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,7 +34,7 @@ class PredictResponse(BaseModel):
 
 
 class ModelInfoResponse(BaseModel):
-    """Output from /model_info."""
+    """Output from /model_info. Explicit types for API contract."""
 
     model_version: str = Field(..., description="Run ID / model artifact version")
     dataset_version: str = Field(..., description="Processed dataset version used for training")
@@ -44,8 +43,8 @@ class ModelInfoResponse(BaseModel):
         ...,
         description="Stable identifier derived from feature_columns (for contract validation)",
     )
-    feature_columns: list = Field(default_factory=list, description="Feature names in trained order")
-    training_window: dict = Field(default_factory=dict, description="Train/val date boundaries")
+    feature_columns: List[str] = Field(default_factory=list, description="Feature names in trained order")
+    training_window: Dict[str, Any] = Field(default_factory=dict, description="Train/val date boundaries")
     tickers: Optional[List[str]] = Field(
         None,
         description="Tickers supported by the model (trained ticker set). None if no ticker encoding.",
@@ -68,3 +67,22 @@ class PredictionOptionsResponse(BaseModel):
         default_factory=lambda: [1],
         description="Horizon values (days) supported by the model (e.g. [1] for 1-day forward return).",
     )
+
+
+class FeatureImportanceItemResponse(BaseModel):
+    """One feature in the feature importance list (GET /feature_importance)."""
+
+    feature: str
+    importance: float
+    std: float = 0.0
+
+
+class FeatureImportanceResponse(BaseModel):
+    """Output from GET /feature_importance. Matches artifact JSON shape."""
+
+    dataset_version: str = ""
+    model_run_id: str = ""
+    n_eval_samples: int = 0
+    metric: str = "mse_increase"
+    n_repeats: int = 5
+    feature_importance: List[FeatureImportanceItemResponse] = Field(default_factory=list)

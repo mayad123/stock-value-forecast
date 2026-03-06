@@ -10,11 +10,8 @@ import json
 import os
 import random
 import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-import sys
 
 import numpy as np
 import pandas as pd
@@ -37,6 +34,8 @@ except Exception:
     pass
 
 from src._cli import config_hash_from_dict, config_hash_from_file, get_git_commit
+from src.core.artifacts import deploy_artifacts_models_path, run_id_from_version
+from src.core.paths import get_paths, repo_root
 from src.eval.baselines import get_baseline_predictions, list_baseline_names
 from src.eval.metrics import compute_metrics
 from src.features.price_features import FEATURE_NAMES, TARGET_NAME
@@ -66,11 +65,6 @@ def _add_ticker_onehot(
             df.loc[df[TICKER_COL].astype(str) == ticker, col] = 1.0
 
 
-def _run_id(dataset_version: str) -> str:
-    """Stable run id for this training run."""
-    return f"{dataset_version}_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}"
-
-
 def run_training(
     config: Dict[str, Any],
     processed_root: Optional[Path] = None,
@@ -83,17 +77,15 @@ def run_training(
     Returns run_id (directory name under models/).
     """
     if log is None:
+        from src.logging_config import get_logger
+        _log = get_logger("train")
         def log(msg: str) -> None:
-            print(f"[TRAIN] {msg}")
+            _log.info("%s", msg)
 
-    paths_cfg = config.get("paths", {})
-    repo_root = Path(__file__).resolve().parents[2]
-    processed_path = processed_root or (repo_root / paths_cfg.get("data_processed", "data/processed"))
-    if not processed_path.is_absolute():
-        processed_path = repo_root / processed_path
-    models_path = models_root or (repo_root / paths_cfg.get("models", "models"))
-    if not models_path.is_absolute():
-        models_path = repo_root / models_path
+    paths = get_paths(config)
+    root = repo_root()
+    processed_path = processed_root or paths["processed_path"]
+    models_path = models_root or paths["models_path"]
 
     # Self-describing artifact: config hash (exact YAML when path available) and git commit
     config_path_str = config.get("_config_path")
@@ -104,7 +96,7 @@ def run_training(
             config_hash = config_hash_from_dict(config)
     else:
         config_hash = config_hash_from_dict(config)
-    git_commit_hash = get_git_commit(repo_root)
+    git_commit_hash = get_git_commit(root)
 
     dataset_version = resolve_processed_version(processed_path, dataset_version_hint)
     log(f"Processed dataset version: {dataset_version}")
@@ -239,7 +231,7 @@ def run_training(
         val_metrics_keras = {}
         val_metrics_shared = {}
 
-    run_id = _run_id(dataset_version)
+    run_id = run_id_from_version(dataset_version)
     out_dir = models_path / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -258,7 +250,7 @@ def run_training(
         if not path_str:
             return None
         try:
-            return os.path.relpath(path_str, repo_root)
+            return os.path.relpath(path_str, root)
         except Exception:
             return path_str
 
@@ -399,7 +391,7 @@ def run_training(
 
     # Mirror this run to deploy_artifacts so the frontend/serve use it when models/ is absent (e.g. cloud)
     if os.environ.get("UPDATE_DEPLOY_ARTIFACTS", "1") == "1":
-        deploy_models = repo_root / "deploy_artifacts" / "models"
+        deploy_models = deploy_artifacts_models_path(root)
         deploy_models.mkdir(parents=True, exist_ok=True)
         dest = deploy_models / run_id
         if dest.exists():

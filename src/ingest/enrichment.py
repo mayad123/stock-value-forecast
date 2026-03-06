@@ -8,12 +8,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import sys
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from src.ingest.alphavantage import (  # noqa: E402
+from src.core.paths import repo_root
+from src.ingest.alphavantage import (
     AlphaVantageError,
     fetch_global_quote,
     fetch_monthly,
@@ -36,8 +32,10 @@ def run_enrichment(
     Returns dict with key "enrichment" suitable for merging into the main ingest manifest.
     """
     if log is None:
+        from src.logging_config import get_logger
+        _log = get_logger("ingest")
         def log(msg: str) -> None:
-            print(f"[INGEST] {msg}")
+            _log.info("%s", msg)
 
     enrichment_cfg = config.get("enrichment") or {}
     symbol_search_enabled = enrichment_cfg.get("symbol_search") is True

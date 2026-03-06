@@ -1,3 +1,5 @@
-# Development and CI: lint, test
+# Dev and CI: runtime + lint + test. Source of truth for optional deps: pyproject.toml [project.optional-dependencies].dev
+# Prefer: pip install -e ".[dev]" (editable install with dev extras).
 -r requirements.txt
+pytest>=7.0.0
 ruff>=0.1.0

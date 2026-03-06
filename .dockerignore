@@ -1,0 +1,31 @@
+# Local dev and secrets
+venv
+.venv
+.env
+.env.*
+!.env.example
+
+# Git and IDE
+.git
+.gitignore
+.cursor
+.cursorignore
+
+# Python cache and test artifacts
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+.coverage
+htmlcov
+.ruff_cache
+.mypy_cache
+
+# Optional: omit local models/reports so the container uses deploy_artifacts only
+# (Uncomment if you want a slimmer image that never uses host-trained artifacts.)
+# models
+# reports
+# data/raw
+# data/processed
+
+# Keep: deploy_artifacts/, configs/, src/, run.py, requirements.txt, frontend/ (if UI is added later)

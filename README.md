@@ -4,45 +4,46 @@ Machine-learning portfolio project demonstrating a small but production-shaped t
 
 ---
 
+## TL;DR 
+
+- **Production-shaped ML pipeline** — Ingest → features → train → backtest → serve, each stage with its own module and CLI.
+- **Time-series leakage protection** — Strict time ordering, no future data in features, scalers fit on train only.
+- **Reproducibility & artifact versioning** — Every run writes a self-describing artifact (config hash, git commit, feature schema, metrics).
+- **Walk-forward evaluation** — Fold-based backtests with per-fold metrics and stability visualizations.
+- **FastAPI serving** — `/predict`, `/model_info`, `/prediction_options`; validates inputs against trained schema.
+- **Streamlit UI** — Model overview, prediction explorer, fold stability, price + backtest overlay.
+
+---
+
 ## Live demo
 
-**Streamlit UI (no setup required):**  
-[https://stock-value-forecast-qneqzw3kpe5d69gjxmmete.streamlit.app/](https://stock-value-forecast-qneqzw3kpe5d69gjxmmete.streamlit.app/)
+**→ [Open the Streamlit UI](https://stock-value-forecast-qneqzw3kpe5d69gjxmmete.streamlit.app/)** (no setup required)
 
 What you can see there:
 - **Model Overview:** current trained run (version, dataset, feature schema fingerprint, metrics, baseline vs model comparison).
 - **Prediction Explorer:** single-ticker predictions driven by the same features used at train time.
 - **Fold Stability:** walk-forward folds with per-fold metrics and variability plots.
+- **Price + Backtest Overlay:** predictions vs historical prices.
 
-This is the best entry point for recruiters and hiring managers; you can get a feel for the system in under a minute.
+---
+
+## What to look at first
+
+| Goal | Where |
+|------|-------|
+| See it running | [Live demo](https://stock-value-forecast-qneqzw3kpe5d69gjxmmete.streamlit.app/) |
+| Training routine & run record | `src/train/train.py` |
+| Backtest & metrics | `src/eval/backtest.py` |
+| Serving API | `src/serve/app.py` |
+| Streamlit UI | `frontend/app.py` (routing); API/data/format in `frontend/api_client.py`, `data_access.py`, `format.py` |
 
 ---
 
 ## Architecture at a glance
 
-End-to-end flow:
+![Pipeline architecture](docs/images/architecture.svg)
 
-```text
-AlphaVantage / sample CSVs
-        │
-        ▼
-  Ingest (optional live mode)
-        │
-        ▼
-  Feature build (price features, leakage checks)
-        │
-        ▼
-  Train (TF/Keras model, run record)
-        │
-        ▼
-  Backtest (baselines + model, metrics + reports)
-        │
-        ▼
-  Serve API (FastAPI, /predict, /model_info)
-        │
-        ▼
-  Streamlit UI (this repo’s frontend/)
-```
+**Flow:** AlphaVantage / sample CSVs → Ingest → Feature build (leakage checks) → Train → Backtest → FastAPI Serve → Streamlit UI. Artifacts: processed datasets, model + run record, reports/metrics.
 
 Key pieces:
 - **Data & features**
@@ -58,7 +59,23 @@ Key pieces:
 
 ---
 
-## What this demonstrates for an ML engineer role
+## Key engineering decisions
+
+- **Strict chronological train/validation/test splits.** Time-series data is not shuffled; splits are defined by date boundaries (e.g. `split_boundaries` in config). Validation and test sets only use data after their start date, so the model is never trained on future information.
+
+- **Leakage prevention guards.** Features use only information available at or before the prediction time (e.g. past returns, past sentiment). Scalers are fit on training data only. The pipeline validates that no feature row uses data after its cutoff date; tests in `tests/integration/test_leakage_invariants.py` and related modules enforce this.
+
+- **Artifact directories for reproducibility and auditability.** Each training run writes a self-describing directory under `models/<run_id>/`: `run_record.json` (config hash, git commit, feature columns, scaler, metrics), `model.keras`, and optional `metrics_summary.json`. Backtest writes to `reports/` with versioned copies. This allows any run to be reproduced or audited from committed config and code.
+
+- **Walk-forward evaluation in addition to a single holdout.** A single train/val/test split can be optimistic. When `eval.walk_forward` is enabled, the backtest evaluates over multiple time windows (folds), producing per-fold metrics and fold-stability views in the UI. This surfaces whether performance is stable across periods.
+
+- **Separation of training pipeline, serving API, and frontend.** Training and evaluation run via CLI stages (`run.py`); the serving layer loads artifacts and exposes a stateless API (`src/serve/app.py`); the Streamlit app is a thin client that calls the API and reads reports. This keeps train/serve contracts explicit, allows the API to be deployed independently, and avoids the UI depending on local file paths for inference.
+
+- **Orchestration vs. business logic.** Workflows (demo, demo-real, live) and CLI dispatch live in `src/orchestration/`; stage implementations stay in domain packages (ingest, features, train, eval, serve). You can run a single stage programmatically with `run_stage("backtest", config)` from tests or automation without going through the CLI.
+
+---
+
+## What this demonstrates
 
 - **Production-shaped pipeline:** clear stages (ingest, features, train, backtest, serve), each with its own module and CLI entry point.
 - **Time-series correctness:** explicit checks for time ordering and label leakage, enforced via unit tests.
@@ -66,19 +83,9 @@ Key pieces:
 - **Evaluation rigor:** baselines vs model, single-window and walk-forward backtests, plus fold stability visualizations.
 - **Serving & UX:** FastAPI backend and a small, focused Streamlit UI, wired together with environment-based configuration and a `make dev` workflow.
 
-If you’d like to see code or tests for any of these pieces during an interview, the fastest starting points are:
-- `src/train/train.py` – training routine and run record.
-- `src/eval/backtest.py` and `src/eval/walk_forward.py` – metrics and fold construction.
-- `src/serve/app.py` – serving contract.
-- `frontend/app.py` – UI that exercises the model and evaluation artifacts.
-
-# Stock Value Forecast
-
-**ML portfolio project** — End-to-end system for forecasting short-horizon stock trend direction from price and optional news data.
-
 ---
 
-## Recruiter Quickstart (No API Keys)
+## Quickstart (No API Keys)
 
 **Demo mode is the default path.** No API keys or `.env` required. Run the full pipeline on bundled sample data in under a minute.
 
@@ -89,19 +96,17 @@ git clone <repo-url>
 cd stock-value-forecast
 python3 -m venv venv
 source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e ".[dev]"   # editable install with dev deps (lint + tests); or: pip install -r requirements.txt
 ```
 
 **2. Run the demo**
 
 ```bash
 make demo
-```
-
-Or directly:
-
-```bash
+# or:
 python run.py demo
+# or, if you installed with pip install -e ".[dev]":
+stock-forecast demo
 ```
 
 This runs **build-features → train → backtest** using `data/sample/` (config: `configs/recruiter_demo_real.yaml`).
@@ -265,7 +270,7 @@ End-to-end flow: **Ingest** writes to `data/`, **Features** read raw data and wr
 - **News (optional):** [Marketaux](https://www.marketaux.com/) financial news API. Set `use_news: true` in config and `MARKETAUX_API_KEY` in the environment. News ingest runs after price ingest; raw responses are stored under `data/raw/news/{ticker}/{ingestion_timestamp}.json`, normalized news under `data/raw/news_normalized/{version}/`, and a manifest under `data/raw/manifests/news_{version}.json`. Sentiment is aggregated by day (average sentiment, count, momentum) and merged into the price feature pipeline with a **leakage rule**: no article published after the prediction cutoff date is included in features.
 - **Enrichment (optional):** Alpha Vantage SYMBOL_SEARCH, GLOBAL_QUOTE, and weekly/monthly time series. Toggle in config under `enrichment.*`; additive only, not required for training. Raw data under `data/raw/enrichment/`; manifests record what was collected. See [docs/alpha-vantage-free-tier.md](docs/alpha-vantage-free-tier.md).
 
-Configuration is two-mode: **recruiter_demo** (default, offline, no API keys) and **live_apis** (Alpha Vantage + optional Marketaux). API keys are supplied via environment variables, not committed. With `mode: live_apis`, the pipeline fails early with a clear message if required keys are missing.
+Configuration is two-mode: **recruiter_demo** (default, offline, no API keys) and **live_apis** (Alpha Vantage + optional Marketaux). API keys are supplied via environment variables, not committed. With `mode: live_apis`, the pipeline fails early with a clear message if required keys are missing. Config loading, validation, and env-only secrets are centralized in `src.config`; see [docs/config.md](docs/config.md) for resolution order and usage. Model, report, and processed-data path resolution (including deploy fallback) is in `src.core.artifacts`; see [docs/artifacts.md](docs/artifacts.md). Key data contracts (run record, metrics, backtest summary, API request/response) are typed in `src.types` and `src.serve.schemas`; see [docs/typed-contracts.md](docs/typed-contracts.md). Logging is consistent and production-style (`[STAGE] message` to stderr); see [docs/logging.md](docs/logging.md).
 
 ---
 
@@ -295,12 +300,39 @@ Backtest evaluation is performed only on the **test** window; validation is used
 
 ---
 
+## Model interpretability
+
+The pipeline includes **permutation-based feature importance**: for each feature, values are shuffled on the validation (or test) set and the increase in MSE is measured. Higher increase means the feature is more important to the model. This uses only the existing model and data; no extra heavy dependencies beyond `matplotlib` for the plot.
+
+**How to run:** After training and backtest, run:
+
+```bash
+python run.py feature-importance
+```
+
+(or `python run.py --config configs/recruiter_demo_real.yaml feature-importance`). This writes:
+
+- **`reports/latest_feature_importance.json`** — Feature names, importance scores, and optional std (over permutation repeats).
+- **`reports/<version>/feature_importance.json`** — Versioned copy.
+- **`reports/latest_feature_importance.png`** — Horizontal bar chart of importance (and versioned PNG under `reports/<version>/`).
+
+The Streamlit **Model Overview** page shows feature importance when the backend serves `reports/latest_feature_importance.json` (or the deploy fallback). The API exposes **GET /feature_importance** for the same artifact.
+
+---
+
 ## Development
 
 ### Prerequisites
 
 - **Python 3.9–3.12** (3.10 or 3.11 recommended for TensorFlow)
 - Git
+
+### Dependency management
+
+- **Source of truth:** `pyproject.toml` — runtime deps in `[project.dependencies]`, dev (pytest, ruff) in `[project.optional-dependencies].dev`. See [docs/packaging.md](docs/packaging.md) for details.
+- **Runtime only** (e.g. Docker, CI serve): `pip install .` or `pip install -r requirements.txt` (requirements.txt mirrors pyproject.toml runtime deps).
+- **Development** (lint + tests): `pip install -e ".[dev]"` (editable install with dev extras), or `pip install -r requirements-dev.txt`.
+- **Console entry point:** After `pip install -e ".[dev]"` you can run `stock-forecast demo`, `stock-forecast train`, etc., instead of `python run.py demo`.
 
 ### Environment setup
 
@@ -315,20 +347,18 @@ cd stock-value-forecast
 python3 -m venv venv
 source venv/bin/activate   # Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install with dev deps (recommended for local dev)
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e ".[dev]"
 
-# Optional: install dev tools (lint)
-pip install -r requirements-dev.txt
+# Or: runtime only, then dev tools separately
+# pip install -r requirements.txt && pip install -r requirements-dev.txt
 
-# API keys: copy .env.example to .env in the repo root and add your keys (required for ingest)
-# cp .env.example .env
-# Then edit .env and set ALPHAVANTAGE_API_KEY; set MARKETAUX_API_KEY if using news (use_news: true).
-# When you run pytest, .env is loaded from the repo root automatically (see tests/conftest.py).
+# API keys: copy .env.example to .env and add keys (required for ingest)
+# When you run pytest, .env is loaded from the repo root (tests/conftest.py).
 ```
 
-From the repo root you can use `make lint` and `make test` (see Makefile).
+Use `make lint` and `make test` from the repo root (see Makefile).
 
 ### Lint
 
@@ -349,10 +379,11 @@ make test
 python -m pytest tests/ -v --tb=short
 
 # Run a single test file
-python -m pytest tests/test_pipeline_timeseries.py -v
+python -m pytest tests/unit/features/test_features.py -v
+python -m pytest tests/integration/test_pipeline_timeseries.py -v
 
 # Run one test by name
-python -m pytest tests/test_integration_e2e.py::test_e2e_build_features_produces_valid_artifacts_no_leakage -v
+python -m pytest tests/e2e/test_integration_e2e.py::test_e2e_build_features_produces_valid_artifacts_no_leakage -v
 
 # Fast: minimal integration test only
 make test-integration
@@ -360,12 +391,12 @@ make test-integration
 
 Unit tests mock API calls, so you don’t need real API keys. Optional: add keys to `.env` if you run tests that call real APIs.
 
-TensorFlow is optional: `tests/test_train.py` and the full e2e train/backtest tests are skipped if `tensorflow` is not installed.
+TensorFlow is optional: `tests/unit/train/` and the full e2e train/backtest tests are skipped if `tensorflow` is not installed. Test layout (unit by domain, integration, e2e) is described in [tests/README.md](tests/README.md).
 
 ### Pipeline commands
 
 ```bash
-python run.py ingest      # requires ALPHAVANTAGE_API_KEY; use_news + MARKETAUX_API_KEY for news
+python run.py ingest      # or: stock-forecast ingest (if installed with -e ".[dev]")
 python run.py build-features
 python run.py train
 python run.py backtest
@@ -403,10 +434,50 @@ make serve
 | **/health** | GET | Health check; returns `{"status": "ok"}`. |
 | **/predict** | POST | Body: `ticker`, `as_of` (YYYY-MM-DD), `horizon` (optional, default 1). Returns `prediction` (score in [-1, 1]), `confidence` (0–1), and echoed inputs. Features are looked up from the processed dataset for the given ticker and date. |
 | **/model_info** | GET | Returns `model_version` (run ID), `training_window`, `dataset_version`, and `feature_columns`. |
+| **/feature_importance** | GET | Returns permutation-based feature importance (from `reports/latest_feature_importance.json`). Run `python run.py feature-importance` to generate. |
 
-The service resolves the model run via `MODEL_RUN_ID` (env) or the latest run under `models/`. Optional env: `SERVE_MODELS_PATH`, `SERVE_PROCESSED_PATH` to override paths (e.g. in tests).
+The service resolves the model run via `MODEL_RUN_ID` (env) or the latest run under `models/`. Optional env: `SERVE_MODELS_PATH`, `SERVE_PROCESSED_PATH` to override paths (e.g. in tests). **Structure:** `app.py` wires routes only; model loading (`loader.py`), feature lookup (`feature_lookup.py`), prediction (`predictor.py`), and response shaping (`responses.py`) are in separate modules so the API layer stays thin and logic is reusable.
 
 **Cloud deployment (e.g. Render):** When `models/` and `data/processed/` do not exist (e.g. fresh clone), the service falls back to `deploy_artifacts/`, which contains committed demo model and processed data. **Training automatically copies the new run to `deploy_artifacts/models/<run_id>/`** so the frontend uses the updated model after you commit and push. Set `UPDATE_DEPLOY_ARTIFACTS=0` before training to skip this. To refresh processed data for the UI, copy `data/processed/<version>/` → `deploy_artifacts/processed/` if needed.
+
+### Docker
+
+The repo includes a **Dockerfile** for running the FastAPI service in a container. The image uses the committed `deploy_artifacts/` (models, processed data, reports), so it runs without local training. For demo/backtest (build-features → train → backtest), run `make demo` or `python run.py demo` locally; the Docker image is optimized for serving only.
+
+**Build:**
+
+```bash
+docker build -t stock-value-forecast-serve .
+```
+
+**Run (port 8000):**
+
+```bash
+docker run -p 8000:8000 stock-value-forecast-serve
+```
+
+Then open `http://localhost:8000/health` and `http://localhost:8000/model_info`.
+
+**Environment variables (optional):**
+
+| Variable | Purpose |
+|----------|---------|
+| `MODEL_RUN_ID` | Use a specific model run (e.g. `demo_20260302T025655Z`). Default: latest in `models/` or `deploy_artifacts/models/`. |
+| `SERVE_MODELS_PATH` | Override path to model run directories. |
+| `SERVE_PROCESSED_PATH` | Override path to processed features (e.g. `data/processed`). |
+| `SERVE_REPORTS_PATH` | Override path to reports (metrics, predictions). |
+| `SERVE_SAMPLE_PRICES_PATH` | Override path to sample price CSVs for `/prices`. |
+
+Example with a custom model path (mount a host directory):
+
+```bash
+docker run -p 8000:8000 \
+  -e SERVE_MODELS_PATH=/app/my_models \
+  -v /path/on/host/models:/app/my_models:ro \
+  stock-value-forecast-serve
+```
+
+**Port mapping:** The container listens on **8000**; `-p 8000:8000` maps host port 8000 to the container. Use `-p 8080:8000` to expose the API on host port 8080 instead.
 
 ---
 

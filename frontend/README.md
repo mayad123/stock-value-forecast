@@ -3,6 +3,13 @@
 Lightweight Streamlit UI for exploring model info, predictions, and fold stability.  
 **The backend API must be running first** (see main repo README).
 
+## Structure
+
+- **`app.py`** — Streamlit entry point: page config, sidebar, routing, and page renderers. Stays thin by delegating to the modules below.
+- **`api_client.py`** — All HTTP calls to the backend (health, metrics, predictions, model_info, predict, prices, feature_importance). Returns data or error strings; no Streamlit.
+- **`data_access.py`** — Local file access (e.g. `reports/latest_metrics.json` for Model Overview / Fold Stability). API-first pages use `api_client` instead.
+- **`format.py`** — Formatting and table/chart data helpers (metric display, metrics tables, fold rows, chart data for Plotly). Pure functions, no Streamlit.
+
 ## Setup (venv)
 
 Create and activate a virtual environment, then install dependencies.

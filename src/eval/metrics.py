@@ -3,15 +3,17 @@ Shared evaluation metrics for the trend prediction task (regression + directiona
 Used by baselines and TensorFlow models so all are comparable.
 """
 
-from typing import Dict, List, Union
+from typing import List, Union
 
 import numpy as np
+
+from src.types import ModelMetrics
 
 
 def compute_metrics(
     y_true: Union[List[float], np.ndarray],
     y_pred: Union[List[float], np.ndarray],
-) -> Dict[str, float]:
+) -> ModelMetrics:
     """
     Compute regression and directional metrics for continuous predictions.
     y_true, y_pred: 1d arrays of real-valued targets/predictions (e.g. forward return).

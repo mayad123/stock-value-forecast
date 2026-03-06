@@ -163,17 +163,20 @@ def run_validate_prices(
     Returns the path to the summary artifact. Raises ValidationError on any failure.
     """
     if log is None:
+        from src.logging_config import get_logger
+        _log = get_logger("validate-prices")
         def log(msg: str) -> None:
-            print(f"[VALIDATE-PRICES] {msg}")
+            _log.info("%s", msg)
 
+    from src.core.paths import repo_root
     paths_cfg = config.get("paths", {})
-    repo_root = Path(__file__).resolve().parents[2]
-    raw_root = raw_root or (repo_root / paths_cfg.get("data_raw", "data/sample"))
+    root = repo_root()
+    raw_root = raw_root or (root / paths_cfg.get("data_raw", "data/sample"))
     if not raw_root.is_absolute():
-        raw_root = repo_root / raw_root
+        raw_root = root / raw_root
     raw_root = raw_root.resolve()
 
-    reports_path = reports_path or (repo_root / "reports")
+    reports_path = reports_path or (root / "reports")
     reports_path = reports_path.resolve()
     reports_path.mkdir(parents=True, exist_ok=True)
 

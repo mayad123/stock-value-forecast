@@ -2,14 +2,16 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+from src.types import RunRecord
 
-def _inject_ticker_onehot_if_needed(df: pd.DataFrame, run_record: Dict[str, Any]) -> pd.DataFrame:
+
+def _inject_ticker_onehot_if_needed(df: pd.DataFrame, run_record: Union[RunRecord, Dict[str, Any]]) -> pd.DataFrame:
     """If run_record has ticker encoding and df has 'ticker' but not ticker_* columns, add one-hot. Returns df (possibly modified copy)."""
     ticker_columns = run_record.get("ticker_columns") or []
     ticker_to_idx = run_record.get("ticker_to_idx") or {}
@@ -27,8 +29,8 @@ def _inject_ticker_onehot_if_needed(df: pd.DataFrame, run_record: Dict[str, Any]
     return df
 
 
-def load_run_record(run_dir: Path) -> Dict[str, Any]:
-    """Load run_record.json from a training run directory."""
+def load_run_record(run_dir: Path) -> RunRecord:
+    """Load run_record.json from a training run directory. Returns typed shape (RunRecord)."""
     path = run_dir / "run_record.json"
     if not path.exists():
         raise FileNotFoundError(f"Run record not found: {path}")
@@ -36,7 +38,7 @@ def load_run_record(run_dir: Path) -> Dict[str, Any]:
         return json.load(f)
 
 
-def load_trained_model(run_dir: Path) -> Tuple[tf.keras.Model, Dict[str, Any]]:
+def load_trained_model(run_dir: Path) -> Tuple[tf.keras.Model, RunRecord]:
     """
     Load model and run record from models/{run_id}/. Supports model.keras (Keras 3) or saved_model/ (legacy).
     Returns (model, run_record). Use run_record['scaler'] and run_record['feature_columns'] for inference.
@@ -55,7 +57,7 @@ def load_trained_model(run_dir: Path) -> Tuple[tf.keras.Model, Dict[str, Any]]:
 
 def predict_with_trained_model(
     model: tf.keras.Model,
-    run_record: Dict[str, Any],
+    run_record: Union[RunRecord, Dict[str, Any]],
     X_df: pd.DataFrame,
 ) -> np.ndarray:
     """
