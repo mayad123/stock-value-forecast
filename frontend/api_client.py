@@ -28,7 +28,9 @@ def get_prediction_options(base_url: str, timeout: int = 60) -> Tuple[Optional[D
         r = requests.get(f"{base_url.rstrip('/')}/prediction_options", timeout=timeout)
         if not r.ok:
             return None, f"Backend returned {r.status_code}"
-        data = r.json()
+        data = r.json() if r.text else {}
+        if not isinstance(data, dict):
+            data = {}
         if not data.get("tickers") and not data.get("dates_by_ticker"):
             return data, "Backend returned no tickers/dates. Ensure processed data exists."
         return data, None
@@ -37,12 +39,15 @@ def get_prediction_options(base_url: str, timeout: int = 60) -> Tuple[Optional[D
 
 
 def get_metrics(base_url: str, timeout: int = 60) -> Tuple[Optional[Dict], Optional[str]]:
-    """GET /metrics. Returns (data, None) or (None, error_message)."""
+    """GET /metrics. Returns (data, None) or (None, error_message). data is always a dict when success."""
     try:
         r = requests.get(f"{base_url.rstrip('/')}/metrics", timeout=timeout)
         if not r.ok:
             return None, f"/metrics returned {r.status_code}"
-        return r.json(), None
+        data = r.json() if r.text else None
+        if data is not None and not isinstance(data, dict):
+            data = {}
+        return data, None
     except requests.RequestException as e:
         return None, str(e)
 
@@ -70,12 +75,15 @@ def get_predictions(
 
 
 def get_model_info(base_url: str, timeout: int = 60) -> Tuple[Optional[Dict], Optional[str]]:
-    """GET /model_info. Returns (data, None) or (None, error_message)."""
+    """GET /model_info. Returns (data, None) or (None, error_message). data is a dict when success."""
     try:
         r = requests.get(f"{base_url.rstrip('/')}/model_info", timeout=timeout)
         if not r.ok:
             return None, f"Backend returned {r.status_code}: {r.text[:200] if r.text else 'No body'}"
-        return r.json(), None
+        data = r.json() if r.text else None
+        if data is not None and not isinstance(data, dict):
+            data = None
+        return data, None
     except requests.RequestException as e:
         return None, str(e)
 

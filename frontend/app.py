@@ -73,10 +73,8 @@ def _page_evaluation():
         st.warning("No metrics data available.")
         return
 
-    metrics_data = metrics_data or {}
-    predictions_data = predictions_data or []
-    if not isinstance(predictions_data, list):
-        predictions_data = []
+    metrics_data = metrics_data if isinstance(metrics_data, dict) else {}
+    predictions_data = predictions_data if isinstance(predictions_data, list) else []
     models = (metrics_data or {}).get("models") or {}
     folds = (metrics_data or {}).get("folds") or []
     aggregate = (metrics_data or {}).get("aggregate") or {}
@@ -202,10 +200,13 @@ def _page_model_overview():
         st.markdown("Ensure the backend is running and a backtest has been run so that reports/latest_metrics.json exists.")
         return
 
+    model_info = model_info if isinstance(model_info, dict) else {}
+    metrics_data = metrics_data if isinstance(metrics_data, dict) else {}
+
     # Metadata
     st.subheader("Metadata")
     c1, c2, c3, c4 = st.columns(4)
-    fp = (model_info or {}).get("feature_schema_fingerprint") or "—"
+    fp = model_info.get("feature_schema_fingerprint") or "—"
     fp_display = (fp[:16] + "…") if fp != "—" and len(fp) > 16 else fp
     with c1:
         st.metric("Model version", model_info.get("model_version", "—"))
@@ -224,7 +225,7 @@ def _page_model_overview():
 
     # Aggregate metrics
     st.subheader("Aggregate evaluation metrics")
-    models = (metrics_data or {}).get("models") or {}
+    models = metrics_data.get("models") or {}
     if not models:
         st.info("No model metrics in latest_metrics.json (empty backtest?).")
     else:
@@ -324,8 +325,9 @@ def _page_fold_stability():
         st.markdown("For fold data, use a config with walk-forward enabled (eval.fold_size_days, eval.step_size_days).")
         return
 
-    folds = (metrics_data or {}).get("folds") or []
-    aggregate = (metrics_data or {}).get("aggregate") or {}
+    metrics_data = metrics_data if isinstance(metrics_data, dict) else {}
+    folds = metrics_data.get("folds") or []
+    aggregate = metrics_data.get("aggregate") or {}
 
     if len(folds) < 2:
         st.warning("Walk-forward requires multiple folds. Run a backtest with walk-forward config to get at least 2 folds.")
