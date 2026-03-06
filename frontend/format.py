@@ -18,7 +18,8 @@ def format_metric_value(v: Any) -> Any:
 def metrics_table_rows(models: Dict[str, Any], metric_keys: List[str]) -> List[Dict[str, Any]]:
     """Build rows for a metrics dataframe: one row per model, columns Model + metric_keys."""
     rows = []
-    for name, m in models.items():
+    for name, m in (models or {}).items():
+        m = m if isinstance(m, dict) else {}
         row = {"Model": name}
         for k in metric_keys:
             row[k] = format_metric_value(m.get(k))
@@ -29,7 +30,8 @@ def metrics_table_rows(models: Dict[str, Any], metric_keys: List[str]) -> List[D
 def metrics_chart_data(models: Dict[str, Any], chart_metrics: List[str]) -> List[Dict[str, Any]]:
     """Long-format data for Plotly bar chart: Model, Metric, Value."""
     out = []
-    for model_name, m in models.items():
+    for model_name, m in (models or {}).items():
+        m = m if isinstance(m, dict) else {}
         for mk in chart_metrics:
             v = m.get(mk)
             if v is not None and not (isinstance(v, float) and math.isnan(v)):
@@ -40,7 +42,8 @@ def metrics_chart_data(models: Dict[str, Any], chart_metrics: List[str]) -> List
 def fold_table_rows(folds: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Rows for fold summary table: Fold ID, Train start/end, Test start/end, n_samples."""
     rows = []
-    for idx, f in enumerate(folds):
+    for idx, f in enumerate(folds or []):
+        f = f if isinstance(f, dict) else {}
         rows.append({
             "Fold ID": f.get("fold_id", idx),
             "Train start": f.get("train_start", "—"),
@@ -59,9 +62,11 @@ def per_fold_metrics_rows(
 ) -> List[Dict[str, Any]]:
     """Long-format rows: Fold ID, Model, then each metric. model_filter: include only these models (None = all)."""
     rows = []
-    for idx, f in enumerate(folds):
+    for idx, f in enumerate(folds or []):
+        f = f if isinstance(f, dict) else {}
         fid = f.get("fold_id", idx)
         for model_name, m in (f.get("metrics") or {}).items():
+            m = m if isinstance(m, dict) else {}
             if model_filter is not None and model_name not in model_filter:
                 continue
             row = {"Fold ID": fid, "Model": model_name}
@@ -77,7 +82,7 @@ def aggregate_mean_std_rows(
 ) -> List[Dict[str, Any]]:
     """Rows for aggregate mean ± std: Model, Metric, Mean, Std. model_filter: None = all."""
     rows = []
-    for model_name, metrics in aggregate.items():
+    for model_name, metrics in (aggregate or {}).items():
         if model_filter is not None and model_name not in model_filter:
             continue
         for metric_key, stats in (metrics or {}).items():
@@ -100,9 +105,11 @@ def fold_chart_data(
 ) -> List[Dict[str, Any]]:
     """Long-format for Plotly line chart: Fold ID, Model, Metric, Value."""
     out = []
-    for f in folds:
+    for f in (folds or []):
+        f = f if isinstance(f, dict) else {}
         fid = f.get("fold_id")
         for model_name, m in (f.get("metrics") or {}).items():
+            m = m if isinstance(m, dict) else {}
             if model_filter is not None and model_name not in model_filter:
                 continue
             for mk in chart_metrics:

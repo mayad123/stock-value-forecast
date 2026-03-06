@@ -5,6 +5,7 @@ Requires the backend API (python run.py serve). Data from API and optional repor
 
 import os
 from pathlib import Path
+from typing import Any
 
 import plotly.express as px
 import pandas as pd
@@ -74,13 +75,18 @@ def _page_evaluation():
 
     metrics_data = metrics_data or {}
     predictions_data = predictions_data or []
-    models = metrics_data.get("models") or {}
-    folds = metrics_data.get("folds") or []
-    aggregate = metrics_data.get("aggregate") or {}
+    if not isinstance(predictions_data, list):
+        predictions_data = []
+    models = (metrics_data or {}).get("models") or {}
+    folds = (metrics_data or {}).get("folds") or []
+    aggregate = (metrics_data or {}).get("aggregate") or {}
 
-    tickers = sorted(set(p.get("ticker") for p in predictions_data if p.get("ticker")))
-    model_names = sorted(models.keys()) if models else sorted(set(p.get("model_name") for p in predictions_data if p.get("model_name")))
-    fold_ids = sorted(set(p.get("fold_id") for p in predictions_data if p.get("fold_id") is not None))
+    def _safe_pred(p: Any) -> dict:
+        return p if isinstance(p, dict) else {}
+    preds = [_safe_pred(p) for p in predictions_data]
+    tickers = sorted(set(p.get("ticker") for p in preds if p.get("ticker")))
+    model_names = sorted(models.keys()) if models else sorted(set(p.get("model_name") for p in preds if p.get("model_name")))
+    fold_ids = sorted(set(p.get("fold_id") for p in preds if p.get("fold_id") is not None))
 
     st.sidebar.markdown("**Filters**")
     filter_ticker = st.sidebar.multiselect("Ticker", options=["All"] + tickers, default=["All"], key="eval_ticker")
@@ -124,18 +130,19 @@ def _page_evaluation():
 
     # Fold stability
     st.subheader("Fold stability")
-    folds_filtered = [f for f in folds if use_all_folds or f.get("fold_id") in (selected_fold_ids or [])]
-    if len(folds) < 2:
+    folds_safe = [f if isinstance(f, dict) else {} for f in folds]
+    folds_filtered = [f for f in folds_safe if use_all_folds or f.get("fold_id") in (selected_fold_ids or [])]
+    if len(folds_safe) < 2:
         st.warning("Walk-forward needs at least 2 folds. Run a backtest with eval.fold_size_days and eval.step_size_days.")
-        if folds:
-            st.dataframe(fmt.fold_table_rows(folds), use_container_width=True, hide_index=True)
+        if folds_safe:
+            st.dataframe(fmt.fold_table_rows(folds_safe), use_container_width=True, hide_index=True)
     else:
         st.dataframe(fmt.fold_table_rows(folds_filtered), use_container_width=True, hide_index=True)
         st.caption("Metrics per fold (by model)")
         per_fold = fmt.per_fold_metrics_rows(folds_filtered, ["mse", "mae", "directional_accuracy"], model_filter)
         if per_fold:
             st.dataframe(per_fold, use_container_width=True, hide_index=True)
-        if aggregate:
+        if aggregate and isinstance(aggregate, dict):
             st.caption("Aggregate (mean ± std across folds)")
             agg_rows = fmt.aggregate_mean_std_rows(aggregate, model_filter)
             if agg_rows:
@@ -148,7 +155,7 @@ def _page_evaluation():
             st.plotly_chart(fig, use_container_width=True)
 
     # Filtered predictions table
-    pred_filtered = list(predictions_data)
+    pred_filtered = list(preds)
     if not use_all_tickers and tickers:
         pred_filtered = [p for p in pred_filtered if p.get("ticker") in filter_ticker]
     if not use_all_models and model_names:
@@ -184,10 +191,12 @@ def _page_model_overview():
     if metrics_error and not _REPO_ROOT.joinpath("reports", "latest_metrics.json").exists():
         metrics_error = _METRICS_FILE_MISSING_MSG
 
-    if model_info_error or metrics_error:
+    if model_info_error or metrics_error or not model_info or not isinstance(model_info, dict):
         st.error("**Model Overview is missing one or more data sources.**")
         if model_info_error:
             st.markdown(f"- **Backend (/model_info):** {model_info_error}")
+        elif not model_info or not isinstance(model_info, dict):
+            st.markdown("- **Backend (/model_info):** No valid data (backend may have returned empty or null).")
         if metrics_error:
             st.markdown(f"- **Metrics file:** {metrics_error}")
         st.markdown("Ensure the backend is running and a backtest has been run so that reports/latest_metrics.json exists.")
@@ -196,7 +205,7 @@ def _page_model_overview():
     # Metadata
     st.subheader("Metadata")
     c1, c2, c3, c4 = st.columns(4)
-    fp = model_info.get("feature_schema_fingerprint") or "—"
+    fp = (model_info or {}).get("feature_schema_fingerprint") or "—"
     fp_display = (fp[:16] + "…") if fp != "—" and len(fp) > 16 else fp
     with c1:
         st.metric("Model version", model_info.get("model_version", "—"))
@@ -260,14 +269,14 @@ def _page_prediction_explorer():
     st.divider()
 
     opts = _get_prediction_options()
-    if not opts or not opts.get("tickers") or not opts.get("dates_by_ticker"):
+    if not opts or not isinstance(opts, dict) or not opts.get("tickers") or not opts.get("dates_by_ticker"):
         err = st.session_state.get("prediction_options_error") or "Ensure the backend is running and supports `/prediction_options`, and that processed data exists."
         st.info(err)
         st.caption("Click **Recheck backend** in the sidebar and try again.")
         return
 
-    dates_by_ticker = opts["dates_by_ticker"]
-    tickers = [t for t in opts["tickers"] if dates_by_ticker.get(t)]
+    dates_by_ticker = (opts.get("dates_by_ticker") or {}) if isinstance(opts.get("dates_by_ticker"), dict) else {}
+    tickers = [t for t in (opts.get("tickers") or []) if dates_by_ticker.get(t)]
     horizons = opts.get("horizons") or [1]
     if not tickers:
         st.info("No tickers with processed data available.")
@@ -287,6 +296,7 @@ def _page_prediction_explorer():
             st.error("**Backend returned an error.** " + (err[:300] if isinstance(err, str) else str(err)[:300]))
             st.caption("Check that ticker and date exist in processed data.")
             return
+        data = data if isinstance(data, dict) else {}
         st.success("Prediction returned successfully.")
         st.metric("Predicted value (trend score)", data.get("prediction", "—"))
         c1, c2 = st.columns(2)
@@ -365,6 +375,10 @@ def _page_price_overlay():
         st.info("No predictions available. Run a backtest first.")
         return
 
+    predictions_data = [p for p in (predictions_data or []) if isinstance(p, dict)]
+    if not predictions_data:
+        st.info("No valid prediction rows.")
+        return
     pred_df = pd.DataFrame(predictions_data)
     if "ticker" not in pred_df.columns or "target_date" not in pred_df.columns:
         st.error("Predictions payload missing required columns.")
@@ -450,14 +464,14 @@ def _page_price_overlay():
 def _sidebar_try_it():
     """Sidebar expander: single prediction (Try It)."""
     opts = _get_prediction_options()
-    if not opts or not opts.get("tickers") or not opts.get("dates_by_ticker"):
+    if not opts or not isinstance(opts, dict) or not opts.get("tickers") or not opts.get("dates_by_ticker"):
         err = st.session_state.get("prediction_options_error") or "Ensure the backend is running and supports `/prediction_options`, and that processed data exists."
         st.caption(err)
         st.caption("Click **Recheck backend** and try again.")
         return
 
-    dates_by_ticker = opts["dates_by_ticker"]
-    tickers = [t for t in opts["tickers"] if dates_by_ticker.get(t)]
+    dates_by_ticker = (opts.get("dates_by_ticker") or {}) if isinstance(opts.get("dates_by_ticker"), dict) else {}
+    tickers = [t for t in (opts.get("tickers") or []) if dates_by_ticker.get(t)]
     horizons = opts.get("horizons") or [1]
     if not tickers:
         st.caption("No tickers with processed data available.")
@@ -474,15 +488,18 @@ def _sidebar_try_it():
         if err:
             st.error("Error: " + (err[:300] if isinstance(err, str) else str(err)[:300]))
             return
+        data = data if isinstance(data, dict) else {}
         pred_val = data.get("prediction")
         model_version = data.get("model_version") or "—"
         price_current = None
         prices_data, _ = api_client.get_prices(_BACKEND_URL, tryit_ticker, end_date=tryit_date, timeout=_BACKEND_TIMEOUT)
         if prices_data and len(prices_data) > 0:
             last = prices_data[-1]
+            last = last if isinstance(last, dict) else {}
             price_current = float(last.get("adjusted_close") or last.get("close") or 0)
         info_data, _ = api_client.get_model_info(_BACKEND_URL, _BACKEND_TIMEOUT)
-        dataset_version = (info_data.get("dataset_version", "—") if info_data else "—")
+        info_data = info_data if isinstance(info_data, dict) else {}
+        dataset_version = info_data.get("dataset_version", "—")
         st.success("Prediction received.")
         price_next = None
         if isinstance(pred_val, (int, float)) and price_current is not None:
