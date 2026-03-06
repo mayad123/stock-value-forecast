@@ -7,7 +7,7 @@ Passed into service helpers so routing stays separate from business logic.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pandas as pd
 

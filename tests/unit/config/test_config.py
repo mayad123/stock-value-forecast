@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.config.loader import DEFAULT_CONFIG_PATH, load_config
+from src.config.loader import load_config
 from src.config.validation import ConfigError, validate_config
 
 

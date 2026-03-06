@@ -14,7 +14,6 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 
 from src.core.paths import repo_root
-from src.logging_config import get_logger
 from src.serve.feature_lookup import lookup_features
 from src.serve.loader import load_artifacts_from_env
 from src.serve.predictor import predict_one, row_to_feature_vector, unknown_ticker_detail, validate_feature_input

@@ -4,8 +4,6 @@ These tests intentionally trigger TimeOrderingError or LeakageError. They fail r
 if the corresponding checks are removed or bypassed in src/features/split.py (or sentiment).
 """
 
-from pathlib import Path
-
 import pandas as pd
 import pytest
 

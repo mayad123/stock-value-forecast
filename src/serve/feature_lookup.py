@@ -6,8 +6,6 @@ Used when the client does not send features in the request; we look up from proc
 
 from typing import Any, Dict, Optional
 
-import pandas as pd
-
 from src.serve.state import ServeContext
 
 

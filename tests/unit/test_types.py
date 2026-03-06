@@ -1,10 +1,7 @@
 """Smoke tests for typed data contracts (src.types)."""
 
-import pytest
-
 from src.types import (
     BacktestSummary,
-    FeatureImportanceItem,
     FeatureImportanceResult,
     FeatureManifest,
     ModelMetrics,

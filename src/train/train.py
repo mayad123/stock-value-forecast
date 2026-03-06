@@ -155,8 +155,6 @@ def run_training(
     random_seeds = {"numpy": seed, "tensorflow": seed, "python": seed}
 
     log("Building model...")
-    sys.stdout.flush()
-    sys.stderr.flush()
     model = build_model(
         n_features=len(feature_cols),
         units=16,
@@ -175,8 +173,6 @@ def run_training(
         )
 
     log(f"Starting fit (epochs={epochs}, batch_size={batch_size})...")
-    sys.stdout.flush()
-    sys.stderr.flush()
     baseline_metrics: Dict[str, Dict[str, Any]] = {}
     baseline_deltas: Dict[str, Dict[str, float]] = {}
 
@@ -333,7 +329,7 @@ def run_training(
             "training": hp,
             "time_horizon": config.get("time_horizon", {}),
             "feature_windows": config.get("feature_windows", {}),
-            "paths": paths_cfg,
+            "paths": config.get("paths", {}),
         },
         "target": target,
         "dataset_version": dataset_version,

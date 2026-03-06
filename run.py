@@ -35,7 +35,7 @@ try:
 except ImportError:
     pass
 
-from src.orchestration import run_cli
+from src.orchestration import run_cli  # noqa: E402
 
 
 def main() -> None:

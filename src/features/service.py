@@ -28,7 +28,6 @@ def build_features(
         TimeOrderingError, LeakageError: from split validation.
     """
     from src.features.price_features import run_build_features
-    from src.features.split import LeakageError, TimeOrderingError
 
     return run_build_features(
         config,

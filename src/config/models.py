@@ -5,6 +5,7 @@ Stages can keep using config.get("paths", {}) etc.; these types document the sha
 and can be used where we want explicit validation or accessors.
 """
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
 

@@ -5,14 +5,10 @@ Keeps route handlers thin; logic for model_info and prediction_options in one pl
 """
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 from src.core.artifacts import resolve_report_path
-from src.serve.schemas import (
-    FeatureImportanceResponse,
-    ModelInfoResponse,
-    PredictionOptionsResponse,
-)
+from src.serve.schemas import ModelInfoResponse, PredictionOptionsResponse
 from src.serve.state import ServeContext
 
 

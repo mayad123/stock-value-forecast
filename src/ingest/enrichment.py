@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.core.paths import repo_root
 from src.ingest.alphavantage import (
     AlphaVantageError,
     fetch_global_quote,

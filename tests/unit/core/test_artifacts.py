@@ -1,9 +1,5 @@
 """Tests for centralized artifact path resolution (src.core.artifacts)."""
 
-import json
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from src.core.artifacts import (

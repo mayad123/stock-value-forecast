@@ -28,7 +28,6 @@ def run_ingest(
             "Demo mode uses sample data. Use live_apis mode for ingestion."
         )
 
-    from src.ingest.alphavantage import AlphaVantageError
     from src.ingest.prices import run_ingest_prices
 
     run_ingest_prices(
@@ -38,7 +37,6 @@ def run_ingest(
     )
 
     if config.get("use_news"):
-        from src.ingest.marketaux import MarketauxError
         from src.ingest.news import run_ingest_news
 
         run_ingest_news(

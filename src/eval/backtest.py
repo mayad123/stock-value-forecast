@@ -251,7 +251,6 @@ def run_backtest(
             except FileNotFoundError:
                 run_dir = None
             if run_dir is not None:
-                run_id = run_dir.name
                 rr_path = run_dir / "run_record.json"
                 if rr_path.exists():
                     with open(rr_path) as f:
